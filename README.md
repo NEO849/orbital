@@ -26,7 +26,7 @@ streaming along the edges that are live right now. <b>The engine is public; your
 
 <br/>
 
-<a href="#why">Why</a> · <a href="#what">What it is</a> · <a href="#architecture">Architecture</a> · <a href="#privacy">Privacy</a> · <a href="#demo">Demo</a> · <a href="#run">Run</a> · <a href="#config">Config</a> · <a href="#layout">Layout</a>
+<a href="#why">Why</a> · <a href="#what">What it is</a> · <a href="#architecture">Architecture</a> · <a href="#privacy">Privacy</a> · <a href="#memory">Memory</a> · <a href="#demo">Demo</a> · <a href="#run">Run</a> · <a href="#config">Config</a> · <a href="#layout">Layout</a>
 
 </div>
 
@@ -136,6 +136,13 @@ python3 tools/scan_private.py     # exit 0 = clean, 1 = findings
 
 The full trust boundary, and an honest list of what orbital does **not** defend against, live in
 [`THREAT_MODEL.md`](THREAT_MODEL.md).
+
+---
+
+<a id="memory"></a>
+![The memory it reads — markmem](https://img.shields.io/badge/The_memory_it_reads_·_markmem-141820?style=for-the-badge&labelColor=0b0d0c)
+
+The memory layer orbital visualizes is powered by [markmem](https://github.com/engramdev/markmem): a self-learning AI memory on Markdown + git, with HybridRAG retrieval and a human-review gate so nothing is remembered without approval. orbital is the 3D view; markmem is the engine. Part of the [engramdev](https://github.com/engramdev) suite.
 
 ---
 
