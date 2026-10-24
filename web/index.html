@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AOS-1 Observatory</title>
+<meta name="description" content="AOS-1 Observatory — 3D-Echtzeit-Visualisierung der Claude-Telemetrie (read-only).">
+<!--
+  Shell für die modulare 3D-App. Verantwortung hier: NUR Gerüst —
+   - importmap bindet das lokal gevendorte three ein (self-contained, keine CDN),
+   - ein festes Grid-Layout (Rahmen aus HUD-Panels, zentrales #scene-Canvas),
+   - Start von src/main.js als ES-Modul.
+  Alle Farben/Logik liegen in palette.js bzw. src/*. prefers-reduced-motion /
+  prefers-contrast werden in den Modulen + unten respektiert.
+-->
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js" } }
+</script>
+<style>
+  :root{ --aos-bg:#0b0d0c; --gutter:14px; --side:300px; }
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; height:100%; background:var(--aos-bg); color:#e8ecf2;
+    font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif; overflow:hidden; }
+  /* Grid: fester Rahmen (oben/links/rechts/unten), 3D-Canvas in der Mitte. */
+  #app{
+    position:fixed; inset:0; display:grid; gap:var(--gutter); padding:var(--gutter);
+    grid-template-columns:var(--side) 1fr var(--side);
+    grid-template-rows:auto minmax(0,1fr) auto;
+    grid-template-areas:
+      "top top top"
+      "left scene right"
+      "bottom bottom bottom";
+  }
+  #hud-top{ grid-area:top; }
+  /* Linke Spalte: Session-Liste (scrollt) + Detail-Panel darunter. */
+  #left-col{ grid-area:left; display:flex; flex-direction:column; gap:var(--gutter); min-height:0; min-width:0; }
+  #hud-left{ flex:1 1 auto; min-height:0; overflow:hidden; display:flex; flex-direction:column; }
+  #spotlight{ flex:0 0 auto; max-height:46%; overflow:auto; }
+  #hud-right{ grid-area:right; overflow-y:auto; min-height:0; }
+  #hud-bottom{ grid-area:bottom; }
+  /* Scene-Zelle: der 3D-Kern bleibt frei, es schwebt nichts darueber. */
+  #scene-cell{ grid-area:scene; position:relative; min-height:0; min-width:0;
+    border:1px solid rgba(255,255,255,0.06); overflow:hidden; }
+  #scene{ position:absolute; inset:0; }
+
+  /* Schmale Viewports (Tablet/Phone): Seiten-Panels unter das Canvas klappen. */
+  @media (max-width: 860px){
+    #app{ grid-template-columns:1fr; grid-template-rows:auto minmax(220px,1fr) auto auto auto;
+      grid-template-areas:"top" "scene" "left" "right" "bottom"; }
+    #hud-left{ max-height:40vh; }
+    :root{ --gutter:12px; }
+  }
+  @media (prefers-contrast: more){ #scene-cell{ border-color:#fff; } }
+</style>
+</head>
+<body>
+  <div id="app">
+    <header id="hud-top"></header>
+    <aside id="left-col">
+      <div id="hud-left"></div>
+      <div id="spotlight"></div>
+    </aside>
+    <section id="scene-cell">
+      <div id="scene"></div>
+    </section>
+    <aside id="hud-right"></aside>
+    <footer id="hud-bottom"></footer>
+  </div>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+# AOS-1 Observatory — was NIE ins oeffentliche Repo darf
+# ----------------------------------------------------------------------------
+# (1) Betreiber-Konfig mit echten Pfaden/IP + lokale Leak-Denylist
+collector/aos.local.json
+aos.local.json
+tools/scan_deny.local.txt
+*.local.txt
+
+# (2) Laufzeit-Artefakte (enthalten im live-Modus ECHTE Daten: Pfade,
+#     Session-IDs, Projektnamen, Tool-Aktivitaet) -> generiert, nie versionieren
+collector/state.json
+collector/state.json.tmp
+collector/events.jsonl
+collector/subagents.jsonl
+state.json
+events.jsonl
+runtime/
+
+# (3) Logs
+logs/
+*.log
+collector/*.log
+
+# (4) Python-Cache
+__pycache__/
+*.pyc
+*.pyo
+
+# (5) versehentlich hier gelandete Fremd-Workspaces
+collector/apktool_mcp_server_workspace/
+
+# (6b) interne Planungs-/Mission-Briefs (referenzieren echte Pfade/IP) -> nie publik
+_ref/
+
+# (6) OS-Kram
+.DS_Store
