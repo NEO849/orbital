@@ -134,6 +134,9 @@ python3 tools/scan_private.py     # exit 0 = clean, 1 = findings
 > proof here (this is a viewer, not a sandbox); the guarantee is structural — *local reads, local
 > disk, loopback bind by default* — not a test that fails the build.
 
+The full trust boundary, and an honest list of what orbital does **not** defend against, live in
+[`THREAT_MODEL.md`](THREAT_MODEL.md).
+
 ---
 
 <a id="demo"></a>
@@ -215,7 +218,7 @@ run.sh       one-command launch · SCHEMA.md  the producer<->web data contract
 
 <div align="center">
 
-**Built by [NEO849](https://github.com/NEO849).** Issues and PRs welcome.
+**Built by [NEO849](https://github.com/NEO849).** Issues and PRs welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`THREAT_MODEL.md`](THREAT_MODEL.md).
 
 ![License](https://img.shields.io/badge/License-MIT-2b3440?style=flat-square&labelColor=0b0d0c)
 &nbsp;
