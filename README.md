@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/hero.png" alt="orbital — a live 3D view of an agent operation: Claude sessions, agents, pipelines, memory and tools as a particle graph with streaming data-flows, framed by live throughput, event and infrastructure panels" width="100%">
+<img src="docs/keyart.png" alt="orbital — see your whole agent operation at once, in 3D: Claude sessions, agents, pipelines, tools, memory and infrastructure as one live particle graph" width="100%">
 
 <br/>
 
@@ -61,6 +61,14 @@ wall of text.
 
 <a id="what"></a>
 ![What it is, precisely](https://img.shields.io/badge/What_it_is-141820?style=for-the-badge&labelColor=0b0d0c)
+
+<div align="center">
+
+<img src="docs/hero.png" alt="orbital's live dashboard — a real agent operation rendered in 3D: Claude sessions, agents, pipelines, memory and tools as a particle graph with streaming data-flows, framed by live throughput, event and infrastructure panels" width="92%">
+
+<sub><em>The live dashboard — sessions, agents, pipelines, tools, memory and infrastructure as one rotatable graph, framed by live throughput, event and infrastructure panels.</em></sub>
+
+</div>
 
 Three small parts, joined only by two files on disk:
 
