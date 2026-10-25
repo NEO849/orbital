@@ -23,6 +23,10 @@ streaming along the edges that are live right now. <b>The engine is public; your
 ![Render](https://img.shields.io/badge/Render-WebGL_·_three.js-2b3440?style=flat-square&labelColor=0b0d0c)
 &nbsp;
 ![Privacy](https://img.shields.io/badge/Privacy-local--only-1f7a33?style=flat-square&labelColor=0b0d0c)
+&nbsp;
+[![ci](https://github.com/engramdev/orbital/actions/workflows/ci.yml/badge.svg)](https://github.com/engramdev/orbital/actions/workflows/ci.yml)
+&nbsp;
+[![leak-gate](https://github.com/engramdev/orbital/actions/workflows/leak-gate.yml/badge.svg)](https://github.com/engramdev/orbital/actions/workflows/leak-gate.yml)
 
 <br/>
 

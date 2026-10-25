@@ -1,0 +1,27 @@
+name: ci
+
+# orbital is Python standard library only — no build step, no dependencies. CI keeps
+# the producer + server code honest with a byte-compile check across the supported
+# Python versions. (The 3D web app is plain ES modules + vendored three.js and ships
+# without a build; it is not exercised here.)
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile check (producer + server + tools)
+        run: python -m compileall -q collector tools

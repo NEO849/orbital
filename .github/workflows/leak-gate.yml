@@ -1,0 +1,24 @@
+name: leak-gate
+
+# Privacy-boundary gate: blocks the moment private markers (absolute home paths,
+# operator IPs, memory-file names, local-override contents) appear in non-ignored
+# files. Mirrors tools/scan_private.py — the same scan run before every push.
+# Fast: Python standard library only, no dependencies. The operator-specific
+# denylist (tools/scan_deny.local.txt) is gitignored and absent here by design;
+# the scanner falls back to its generic patterns.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  leak-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Private-marker scan
+        run: python3 tools/scan_private.py
