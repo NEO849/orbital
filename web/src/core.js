@@ -69,7 +69,7 @@ const CORE_VERT = `
   varying float vN; varying vec3 vVN; varying vec3 vVP;
   ${SNOISE}
   void main(){
-    float n = snoise(normalize(position) * 2.1 + vec3(0.0, uTime * 0.22, 0.0));
+    float n = snoise(normalize(position) * 2.6 + vec3(0.0, uTime * 0.22, 0.0));
     vN = n;
     vec3 p = position + normal * n * uAmp;
     vVN = normalize(normalMatrix * normal);
@@ -137,7 +137,7 @@ export function createCore(scene) {
   // 1) Innen-Reaktor (Noise-Displacement + Emissive-Gradient).
   const coreMat = new THREE.ShaderMaterial({
     uniforms: {
-      uTime: { value: 0 }, uAmp: { value: 0.14 },
+      uTime: { value: 0 }, uAmp: { value: 0.10 },
       uHot: { value: hot }, uWarm: { value: amber }, uGlow: { value: 1.0 },
     },
     vertexShader: CORE_VERT, fragmentShader: CORE_FRAG,
@@ -191,7 +191,7 @@ export function createCore(scene) {
       const pulse = 0.5 + 0.5 * Math.sin(t * 1.1);
       const lvl = 0.40 + 0.33 * load;                     // Idle 0.40, Voll-Last 0.73 → glüht, blendet nie
       coreMat.uniforms.uGlow.value = lvl * (0.9 + 0.1 * pulse);
-      coreMat.uniforms.uAmp.value = 0.09 + 0.05 * load + 0.015 * pulse;
+      coreMat.uniforms.uAmp.value = 0.06 + 0.04 * load + 0.010 * pulse;   // gedämpftes Displacement → definierter Kern statt kochende Wolke
       // Halo-Bleed gedämpft (Design 2026-10-28): die additive Hülle fraß sonst die inneren
       // Memory-Neuronen → Kern bleibt hell, Glut-Fußabdruck enger, Nachbarn atmen.
       shellMat.uniforms.uStrength.value = (0.28 + 0.30 * load) * (0.85 + 0.15 * pulse);

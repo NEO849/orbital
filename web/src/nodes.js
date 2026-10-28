@@ -143,35 +143,61 @@ function geoFor(type) {
   return geoCache[type];
 }
 
-// Billboard-Label als CanvasTexture-Sprite (Typ klein + Kurzname groß).
+// Abgerundetes Rechteck auf den 2D-Kontext (für das Label-Backing).
+function roundRectPath(g, x, y, w, h, r) {
+  g.beginPath();
+  g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r);
+  g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r);
+  g.arcTo(x, y, x + w, y, r);
+  g.closePath();
+}
+
+// Billboard-Label als CanvasTexture-Sprite: Typ-Kicker klein + Kurzname groß, auf einer
+// dezenten dunklen Platte mit feinem Rahmen (Machined-Graphite). Enterprise-Tuning 2026-10-28:
+// die Platte hebt den Text zuverlässig vom bewegten Strom-Hintergrund ab (Schatten allein reichte
+// bei hellen Partikeln nicht) — gebändigt, nicht grell.
 function makeLabel(e) {
-  const W = 320, Hh = 96, dpr = 2;
+  const W = 368, Hh = 104, dpr = 2;
   const cv = document.createElement('canvas');
   cv.width = W * dpr; cv.height = Hh * dpr;
   const g = cv.getContext('2d');
   g.scale(dpr, dpr);
   g.textBaseline = 'middle';
-  // Dunkler Schatten gegen den hellen Strom-Hintergrund → Text hebt sich klar ab.
-  g.shadowColor = 'rgba(0,0,0,0.9)'; g.shadowBlur = 6;
-  // Typ-Kicker (Großbuchstaben) — heller als zuvor, besser lesbar
-  g.fillStyle = 'rgba(206,214,226,0.95)';
-  g.font = '600 18px ui-monospace,Menlo,Consolas,monospace';
-  g.fillText((e.type || '').toUpperCase(), 4, 20);
-  // Kurzname (nahezu weiß → maximale Lesbarkeit)
-  g.fillStyle = '#f4f7fb';
-  g.font = '700 30px -apple-system,Segoe UI,Helvetica,Arial,sans-serif';
-  g.fillText(humanLabel(e), 4, 60);   // GEMEINSAMER Name mit der HUD-Liste (entity.js)
+
+  const type = (e.type || '').toUpperCase();
+  const name = humanLabel(e);
+  const kFont = '600 17px ui-monospace,Menlo,Consolas,monospace';
+  const nFont = '700 31px -apple-system,Segoe UI,Helvetica,Arial,sans-serif';
+  g.font = kFont; const tw1 = g.measureText(type).width;
+  g.font = nFont; const tw2 = g.measureText(name).width;
+
+  // Platte an den breiteren Text angepasst (nie über die Canvas-Breite hinaus).
+  const padX = 11, boxH = 68, bx = 3, by = (Hh - boxH) / 2;
+  const boxW = Math.min(W - 6, Math.max(tw1, tw2) + padX * 2);
+  g.fillStyle = 'rgba(11,13,12,0.55)';
+  roundRectPath(g, bx, by, boxW, boxH, 4); g.fill();
+  g.lineWidth = 1; g.strokeStyle = 'rgba(122,132,120,0.38)';
+  roundRectPath(g, bx + 0.5, by + 0.5, boxW - 1, boxH - 1, 4); g.stroke();
+
+  // Text mit feinem Schatten (Kanten-Trennung gegen die Platte + Durchscheinendes).
+  g.shadowColor = 'rgba(0,0,0,0.9)'; g.shadowBlur = 4;
+  g.fillStyle = 'rgba(206,214,226,0.95)'; g.font = kFont;
+  g.fillText(type, bx + padX, by + 19);
+  g.fillStyle = '#f4f7fb'; g.font = nFont;
+  g.fillText(name, bx + padX, by + 46);
+
   const tex = new THREE.CanvasTexture(cv);
   tex.anisotropy = 4; tex.colorSpace = THREE.SRGBColorSpace; tex.needsUpdate = true;
-  // depthTest:false → Label wird NIE hinter einer Kugel/Geometrie versteckt (immer-oben-Overlay,
-  // Enterprise-Standard für Beschriftungen). renderOrder hoch → zeichnet nach Knoten/Adern/Partikeln.
+  // depthTest:false → Label nie hinter Geometrie versteckt (immer-oben-Overlay); renderOrder hoch.
   const mat = new THREE.SpriteMaterial({
     map: tex, transparent: true, depthWrite: false, depthTest: false, opacity: 1.0,
   });
   const sp = new THREE.Sprite(mat);
-  sp.scale.set(1.8, 0.5, 1);         // kleiner (Referenz-Stil, weniger Dominanz)
-  sp.position.set(1.0, 0.55, 0);     // klar SEITLICH+leicht ÜBER dem Knoten → frei neben der Kugel
-  sp.renderOrder = 20;               // über allem → immer lesbar
+  sp.scale.set(2.1, 0.59, 1);        // Canvas-Aspekt 368:104 ≈ 3.54 → Sprite-Aspekt gleich (keine Verzerrung)
+  sp.position.set(1.1, 0.6, 0);      // seitlich + leicht über dem Knoten, frei neben der Kugel
+  sp.renderOrder = 20;
   sp.userData.tex = tex;
   return sp;
 }
@@ -365,7 +391,7 @@ export function createNodes(scene) {
     ringT += dt;
     for (const rec of nodes.values()) {
       rec.mesh.scale.setScalar(s);
-      if (rec.label) rec.label.scale.set(1.8 / s, 0.5 / s, 1);
+      if (rec.label) rec.label.scale.set(2.1 / s, 0.59 / s, 1);
       // Orbit-Ringe drehen (gegenläufig) + dezent atmen → lebendiger Sci-Fi-Knoten.
       if (rec.rings) for (const r of rec.rings) {
         r.mesh.rotation[r.axis] += r.speed * dt;

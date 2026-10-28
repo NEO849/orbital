@@ -41,12 +41,13 @@ const MAX_SPREAD = 0.14;   // max. Fächer-Halbbreite quer (perpA) in der Mitte 
 const MAX_SPREAD_B = 0.15; // max. Fächer-Halbhöhe (perpB) (war 0.22) — flacherer Ribbon-Fächer → gerichteter Fluss statt Volumen-Staub
 const CORE_WHITE = 1.3;    // Kern-Boost nahe der Rail-Mitte (war 2.2 + neutral-weiß = wusch alles weiß);
                            // jetzt hue-erhaltend → verstärkt Gold/Cyan statt zu entfärben
-const AMBIENT_RATE = 32;   // Partikel/s je Kante bei heat=1 (war 22) — dichtere stehende Dauer-Flüsse (enger Fächer → Dichte, nicht Breite)
-const AMBIENT_CAP = 120;   // max. Ambient-Spawns pro Frame (war 80) — lässt die Dauer-Flüsse dicht werden
+const AMBIENT_RATE = 15;   // Partikel/s je Kante bei heat=1 (Enterprise-Tuning 2026-10-28: war 32) — gebändigt:
+                           // gerichtete, ruhige Dauer-Flüsse statt horizontaler Laser-Explosion
+const AMBIENT_CAP = 55;    // max. Ambient-Spawns pro Frame (war 120) — deckelt die Gesamt-Dichte hart
 // STRUKTUR-HEBEL (Neuro.mov = wenige, getrennte Seile): nur Kanten mit ECHTER Hitze streamen.
-// Bis hier stand das Gate bei 0.05 → praktisch jede Kante floss = Volumen-Dunst. Höheres Gate
-// = wenige fette Gold-Seile, viel Schwarz dazwischen. Dial: höher = strenger/leerer, 0.05 = alt.
-const HEAT_GATE = 0.28;
+// Enterprise-Tuning: Gate deutlich höher (war 0.28) → nur die paar HEISSESTEN Kanten streamen,
+// viel ruhiges Schwarz dazwischen = kontrolliert, nicht reizüberflutet. Dial: höher = strenger/leerer.
+const HEAT_GATE = 0.46;
 
 // Runde, weich auslaufende Glow-Textur (einmal gebaut, geteilt).
 function makeGlowTexture() {
@@ -141,7 +142,7 @@ export function createFlows(scene, getPosition) {
     // DICHTE wie Neuro.mov: mehr Partikel pro Burst (war 48..200) → der über die ganze Kante
     // gestaffelte Strom wird ein DICHTES Seil statt vereinzelter Sternchen. Enger Fächer hält
     // die Mehrmenge gebündelt (= Dichte), nicht breit (= Staub).
-    let count = Math.max(90, Math.min(360, Math.round(110 + Math.log10(1 + mag) * 64)));
+    let count = Math.max(40, Math.min(150, Math.round(48 + Math.log10(1 + mag) * 40)));
     if (metric === 'bytes') count = Math.round(count * 0.6);   // Daten sparser → an Dichte erkennbar
     const bright = 0.9 + Math.min(1, Math.log10(1 + mag) / 5) * 0.8;
     return { metric, count, bright };

@@ -43,12 +43,6 @@ export function NavOverlay() {
           </button>
         </span>
       ))}
-      {nav.level === 0 && (
-        <div id="orbital-core-label" style={{ position: 'fixed', left: 0, top: 0, opacity: 0, pointerEvents: 'none',
-          color: BASE.text, font: '600 11px ui-monospace, Menlo, Consolas, monospace', letterSpacing: '0.28em',
-          padding: '2px 9px', background: 'rgba(11,13,12,0.55)', border: `1px solid ${BASE.line}`,
-          textShadow: `0 0 6px ${BASE.bg}`, whiteSpace: 'nowrap' }}>CLAUDE CODE</div>
-      )}
       {items.length === 0 && (
         <span style={{ color: BASE.muted, font: '12px ui-monospace, Menlo, Consolas, monospace', pointerEvents: 'none' }}>
           {nav.level === 0 ? 'keine sichtbaren Sessions' : 'keine Daten auf dieser Ebene'}

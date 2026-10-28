@@ -15,7 +15,7 @@ const ROW_DY = 2.5;
 // komplett im Bild liegt (Halbbreite ~10 Einheiten, fov 60).
 export function poseFor(level, aspect) {
   const a = Math.max(0.4, aspect || 1.5);
-  if (level <= 0) return { pos: [0, 4, Math.max(16, 19 / a)], look: [0, 0, 0] };
+  if (level <= 0) return { pos: [0, 4.5, Math.max(17, 20.5 / a)], look: [0, 0, 0] };
   const cz = centerZ(level);
   return { pos: [0, 2.5, cz + Math.max(16.5, 5.2 + 17.5 / a)], look: [0, 0, cz] };
 }

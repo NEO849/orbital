@@ -116,20 +116,6 @@ export function NeuralField() {
       }
     } catch (_) { /* egal */ }
 
-    // Label "CLAUDE CODE" an der Kern-Projektion
-    try {
-      const lab = document.getElementById('orbital-core-label');
-      if (lab) {
-        if (!on) lab.style.opacity = '0';
-        else {
-          const v = tmp.current.set(0, -3.1, 0).project(camera);
-          const rc = gl.domElement.getBoundingClientRect(), w = rc.width, h = rc.height;
-          lab.style.transform = `translate(${rc.left + ((v.x + 1) / 2) * w}px, ${rc.top + ((1 - v.y) / 2) * h}px) translate(-50%, 0)`;
-          lab.style.opacity = v.z < 1 ? '1' : '0';
-        }
-      }
-    } catch (_) { /* egal */ }
-
     if (!on) return;
     try {
       const camDist = camera.position.length();
