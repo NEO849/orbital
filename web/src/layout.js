@@ -1,59 +1,59 @@
-// AOS-1 Observatory — src/layout.js
-// Verantwortung: deterministisches ZONEN-Layout. KEINE Physik, KEIN three.
-// Reine Pure-Function: entities[] → Map<id,{x,y,z}>.
+// Orbital — src/layout.js
+// Verantwortung: deterministisches SATURN-RING-Layout. KEINE Physik, KEIN three.
+// Reine Pure-Function: entities[] → Map<id,{x,y,z,ring}>.
 //
-// Prinzip (Enterprise-lesbar, Ergebnis des Design-Arbeitskreises):
-//  - Die alte Vollkugel-Schalen-Lösung war unlesbar ("Kugel-Suppe"): Radius als
-//    Typ-Code ist per Auge nicht ablesbar, weil sich die Schalen auf der Kugel
-//    durchdringen → jeder Typ erscheint "überall".
-//  - NEU: jeder Typ bekommt einen FESTEN WINKEL-SEKTOR der Scheibe (fester Platz)
-//    UND ein Radius-Band. "Was für ein Ding" ist aus RICHTUNG + ABSTAND gemeinsam
-//    ablesbar. Memory bleibt der zentrale Hub (drehbare Wolke).
-//  - DISK-FLATTEN: Y wird mit Y_SQUASH gestaucht → aus der Kugel wird eine flache
-//    Galaxie-Scheibe. 0.55 (nicht 0.35) → klar lesbar, aber bewusst noch 3D
-//    (Tiefe + Fog bleiben, drehbar bleibt der Kernwunsch).
+// Modell (Design-Arbeitskreis 2026-10-27, Enterprise/UX-recherche-gestützt):
+//  - Das Zentrum (0,0,0) ist dem Erdkern-Reaktor vorbehalten (= das System/Claude, R2).
+//  - Jeder Entitäts-TYP bekommt GENAU EINEN Ring (Guardrail: „ein Ring = ein Typ" →
+//    Ring-Zugehörigkeit ist sofort lesbar). Kritikalität/Kern-Nähe über den RADIUS ρ
+//    (innen = kognitiv/zentral, außen = Peripherie), nicht über Ring-Mischung.
+//  - Für den volumetrischen „Saturn"-Look sitzt jeder Ring zusätzlich auf einem kleinen
+//    Y-Versatz (yc) und einer dezenten Achsneigung (alpha). Radien sind so separiert,
+//    dass sich Knoten verschiedener Ringe nicht durchdringen.
+//  - Memory = innerster Ring (Brain-Layer um den Kern). professor teilt die agent-Bahn
+//    (gleiche Familie, nur minimal weiter außen).
+//  - Rotation (R6) dreht NUR die visuelle Phase (theta0 + speed·t); die LOGISCHE Position
+//    bleibt stabil → Wiedererkennung/Vergleich über Zeit bleibt möglich. Darum trägt jeder
+//    Positions-Record seine Ring-Parameter mit (rho, yc, alpha, theta0, speed), damit nodes
+//    + Ströme dieselbe Live-Position berechnen und nie voneinander abkoppeln.
 //
-// STABIL: Position hängt nur von (type, sortierter Index, Typ-Anzahl) ab →
-// gleiche id ⇒ gleiche Position über Ticks, solange der Typ-Bestand gleich bleibt.
+// STABIL: Position hängt nur von (type, sortierter Index, Typ-Anzahl) ab → gleiche id ⇒
+// gleiche Basis-Position/Phase über Ticks, solange der Typ-Bestand gleich bleibt.
 
 const DEG = Math.PI / 180;
 
-// Vertikale Stauchung: 1.0 = Vollkugel, 0 = exakt flach. 0.55 = lesbare Scheibe mit Tiefe.
-const Y_SQUASH = 0.55;
-
-// Zonen je Typ: [Azimut-Zentrum°, Halbwinkel°, rMin, rMax]. Die Sektoren kacheln
-// den Kreis (Blick von oben), session liegt vorn (zur Default-Kamera). Memory ist
-// der zentrale Hub und wird separat als Fibonacci-Wolke gelegt.
-const ZONE = {
-  session:   [180, 46, 5.0, 8.4],    // VORN — Protagonist, kameranah; weiter Fächer + breites Radius-Band → die großen Kugeln stehen klar getrennt (kein Blob)
-  agent:     [330, 30, 6.5, 8.0],    // RECHTS — die "Arbeiter"
-  professor: [330, 30, 6.5, 8.0],    // bei den Agenten (Unterfamilie)
-  pipeline:  [ 85, 25, 7.5, 9.0],    // LINKS-HINTEN — Infrastruktur
-  brett:     [135, 15, 5.5, 6.5],    // LINKS — wenige, Eck-Platz
-  tool:      [255, 45, 9.5, 11.5],   // AUSSENRING — viele, Peripherie
-  server:    [ 30, 30, 11.0, 13.0],  // FERNER RAND — reiner Rahmen
+// Ring je Typ: rho=Radius, yc=Y-Versatz, alpha=Neigung(°) um die X-Achse, phase0=Winkel-
+// Startversatz (damit Ring-„Nähte" nicht fluchten), speed=rel. Rotationsgeschwindigkeit (R6).
+// Radien bewusst ENG & gleichmäßig separiert (Design-Arbeitskreis 2026-10-28): die alte
+// Spreizung (bis ρ12) ließ eine Leere zwischen Hirn-Kern und den Außen-Ringen → äußere Knoten
+// wirkten am Orbit als losgelöste Riesen-Ballons. Jetzt max ρ9,7 → EIN kohäsiver Organismus,
+// „ein Ring = ein Typ" + Radius-Ordnung innen→außen bleiben, Mindestabstand ≥0,6 (keine Durchdringung).
+const RING = {
+  memory:    { rho:  3.4, yc:  0.0, alpha:   6, phase0: 0.00, speed:  0.9 },  // innerster Brain-Ring
+  session:   { rho:  5.0, yc:  0.0, alpha:   0, phase0: 0.12, speed:  1.0 },  // Äquator-Hauptring (Protagonist)
+  agent:     { rho:  6.2, yc:  0.6, alpha:  12, phase0: 0.20, speed: -0.8 },  // Arbeiter-Band
+  professor: { rho:  6.9, yc:  0.6, alpha:  12, phase0: 0.35, speed: -0.8 },  // selbe Familie, knapp außen
+  pipeline:  { rho:  7.7, yc: -0.6, alpha: -10, phase0: 0.05, speed:  0.7 },  // Infrastruktur
+  tool:      { rho:  8.5, yc:  0.3, alpha:  11, phase0: 0.27, speed: -0.6 },  // viele
+  brett:     { rho:  9.1, yc: -0.35, alpha: -7, phase0: 0.50, speed:  0.65 }, // wenige
+  server:    { rho:  9.7, yc: -0.5, alpha: -10, phase0: 0.15, speed:  0.5 },  // äußerste Peripherie (flach in der Scheibe)
 };
-const DEFAULT_ZONE = [0, 40, 8.0, 9.0];
+const DEFAULT_RING = { rho: 9.0, yc: 0.0, alpha: 0, phase0: 0, speed: 0.6 };
 
-const MEM_RADIUS = 2.3;   // zentrale Gedächtnis-Wolke (leicht größer gg. Flatten-Überlappung)
-
-const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
-
-// Ein Punkt i von n auf der Einheitskugel (Fibonacci-Spirale) — nur für den Memory-Hub.
-function fibDir(i, n) {
-  if (n <= 1) return { x: 0, y: 0, z: 0, single: true };
-  const y = 1 - (i / (n - 1)) * 2;
-  const r = Math.sqrt(Math.max(0, 1 - y * y));
-  const phi = i * GOLDEN_ANGLE;
-  return { x: Math.cos(phi) * r, y, z: Math.sin(phi) * r, single: false };
+// Ein Knoten-Punkt auf einem geneigten Ring. theta = Umlaufwinkel; Grundkreis in XZ,
+// dann um die X-Achse um alpha gekippt (y' = -sin·z, z' = cos·z).
+function ringPointAt(r, theta) {
+  const ca = Math.cos(r.alpha * DEG), sa = Math.sin(r.alpha * DEG);
+  const bx = r.rho * Math.cos(theta), bz = r.rho * Math.sin(theta);
+  return { x: bx, y: (r.yc || 0) - sa * bz, z: ca * bz };
 }
 
-// entities: Entity[] (SCHEMA.md). Rückgabe: Map<id, {x,y,z}>.
+// entities: Entity[] (SCHEMA.md). Rückgabe: Map<id, {x,y,z,ring}>.
 export function computeLayout(entities) {
   const pos = new Map();
   if (!Array.isArray(entities) || !entities.length) return pos;
 
-  // 1) Nach Typ gruppieren, je Gruppe nach id sortieren (stabile Reihenfolge).
+  // Nach Typ gruppieren, je Gruppe nach id sortieren (stabile Reihenfolge).
   const byType = new Map();
   for (const e of entities) {
     if (!e || !e.id) continue;
@@ -65,43 +65,42 @@ export function computeLayout(entities) {
 
   for (const [type, list] of byType) {
     const n = list.length;
-
-    // Memory = zentraler Hub: dichte Fibonacci-Wolke, vertikal gestaucht.
-    if (type === 'memory') {
-      for (let i = 0; i < n; i++) {
-        const d = fibDir(i, n);
-        if (d.single) { pos.set(list[i].id, { x: 0.4, y: 0, z: 0.4 }); continue; }
-        pos.set(list[i].id, {
-          x: d.x * MEM_RADIUS,
-          y: d.y * MEM_RADIUS * Y_SQUASH,
-          z: d.z * MEM_RADIUS,
-        });
-      }
-      continue;
-    }
-
-    // Alle anderen: FÄCHER im eigenen Winkel-Sektor + Radius-Band, 3 Radius-Reihen
-    // für Volumen, leichte vertikale Streuung (deterministisch), dann Y gestaucht.
-    const [cDeg, halfDeg, rMin, rMax] = ZONE[type] || DEFAULT_ZONE;
-    const aMin = (cDeg - halfDeg) * DEG;
-    const span = 2 * halfDeg * DEG;
-    const rSpan = rMax - rMin;
+    const r = RING[type] || DEFAULT_RING;
     for (let i = 0; i < n; i++) {
-      const t = n <= 1 ? 0.5 : i / (n - 1);
-      const az = aMin + span * t;                 // über den Sektor sweepen (sortierter Index)
-      const row = n <= 2 ? 1 : i % 3;             // 3 Radius-Reihen → gefüllter Fleck statt dünner Bogen
-      const r = rMin + rSpan * ((row + 0.5) / 3);
-      // vertikale Streuung aus dem goldenen Winkel (deterministisch, kein Zufall)
-      const yv = (((i * 0.6180339887) % 1) - 0.5) * rSpan * 0.6;
+      // Gleichverteilung auf dem Ring (Winkel 2π·(i+phase0)/n).
+      const theta = 2 * Math.PI * ((i + (r.phase0 || 0)) / Math.max(1, n));
+      const p = ringPointAt(r, theta);
       pos.set(list[i].id, {
-        x: Math.cos(az) * r,
-        y: yv * Y_SQUASH,
-        z: Math.sin(az) * r,
+        x: p.x, y: p.y, z: p.z,
+        ring: { rho: r.rho, yc: r.yc || 0, alpha: r.alpha || 0, theta0: theta, speed: r.speed || 0 },
       });
     }
   }
   return pos;
 }
 
-// Für HUD/Debug: Zonen-Mitten (read-only). Nutzbar später für Zonen-Anker-Labels.
-export const zones = { ...ZONE, _memRadius: MEM_RADIUS, _ySquash: Y_SQUASH };
+// Ring-Linien-Pfad (für zones.js: feine Laser-Ring-Linie je Typ). GARANTIERT deckungsgleich
+// mit den Knoten-Positionen, weil dieselbe ringPointAt-Formel. Rückgabe: Float32Array (LineLoop).
+export function ringPath(type, segments = 160) {
+  const r = RING[type] || DEFAULT_RING;
+  const out = new Float32Array(segments * 3);
+  for (let i = 0; i < segments; i++) {
+    const p = ringPointAt(r, 2 * Math.PI * (i / segments));
+    out[i * 3] = p.x; out[i * 3 + 1] = p.y; out[i * 3 + 2] = p.z;
+  }
+  return out;
+}
+
+// Label-Anker je Ring = fester Welt-Punkt an der „Vorderseite" (theta=−90°), leicht nach
+// außen + über den Ring gerückt. Bleibt fix, auch wenn der Ring später rotiert (benennt
+// weiter korrekt den Typ, dessen Identität sich ja nicht dreht).
+function ringAnchor(r) {
+  const p = ringPointAt(r, -Math.PI / 2);
+  return { x: p.x * 1.06, y: p.y + 0.7, z: p.z * 1.06 };
+}
+const ANCHORS = {};
+for (const t of Object.keys(RING)) ANCHORS[t] = ringAnchor(RING[t]);
+
+// Für zones.js (Ring-Linien + Labels) + HUD/Debug (read-only). Top-Level-Keys = Typen mit
+// Ring-Parametern; _-Präfix = Meta. _order = Zeichen-/Iterations-Reihenfolge innen→außen.
+export const zones = { ...RING, _anchors: ANCHORS, _order: Object.keys(RING) };

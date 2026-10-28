@@ -5,14 +5,15 @@
 //
 // Lesbarkeits-Regeln (Design-Arbeitskreis — gegen "diffuser Staub"):
 //  R1 HOT-KONZENTRATION: Ambient-Rate ∝ heat² → wenige DICKE Flüsse statt Flächen-Staub.
-//  R2 GEORDNETE RIBBONS: zwei flache Bänder mit Rechteck-Querschnitt (BAND_W×BAND_H),
-//     feste Hälften (±LANE·perpA, ±LANE_B·perpB) → Dichte liest als Partikel-pro-Länge;
-//     weißer Spine je Band aus Nähe zur Band-Mittellinie (|wA|) → Referenz-Signatur.
+//  R2 SANDUHR-FÄCHER: zwei Ströme mit festem Rail-Versatz (±LANE·perpA, ±LANE_B·perpB) und
+//     einer Quer-Streuung, die mit sin(π·t) atmet — tight rope an den Knoten, dichter
+//     gefiederter Fächer mittig; warm-weißer Kern aus Nähe zur Rail-Mitte → Referenz-Signatur.
 //  R3 TOKEN vs DATA über DREI Kanäle (nicht nur Farbe, CVD-sicher):
 //     - Farbe: token amber / data cyan
 //     - Bahn (Position): feste Hälften ±0.40·perpA + ±0.10·perpB → nie voll überlagert
 //     - Bewegung: data sparser (×0.6) + schneller (×1.4) → an Tempo+Lane unterscheidbar
-//  RICHTUNG: Helligkeit kopf-gewichtet (heller am Ziel-Ende) → das Auge liest den Fluss-Vektor.
+//  RICHTUNG: Helligkeit an BEIDEN Knoten hell (tight rope), mittig gedämpft; leichte Kopf-
+//     Gewichtung erhält den lesbaren Fluss-Vektor (actor→target).
 //
 // Umsetzung: EIN THREE.Points-Pool (additive Glow-Textur), per-Partikel Farbe/Helligkeit
 // über Vertex-Colors, Ring-Cursor statt Alive-Suche. Jede Methode fail-open (try/catch).
@@ -23,18 +24,29 @@ import { log } from './log.js';
 
 const l = log.mod('flows');
 
-const MAX = 11000;         // Pool-Obergrenze — GPU-Points tragen das; Wucht aus Menge
-const LIFE = 1.7;          // Sekunden actor→target (lesbare Spur, aber zügig → Richtung sichtbar)
-const BASE_SIZE = 0.19;    // kleine Punkte — Wirkung aus Dichte, nicht Blob-Größe
-// Zwei GEORDNETE Ribbons statt Sprüh-Kegel: feste Hälften der Verbindung + Rechteck-
-// Querschnitt (konstant, keine runde Bell über die Breite) → Dichte liest als Partikel-
-// pro-Länge. Token = +perpA-Hälfte, Daten = −perpA-Hälfte; zusätzlicher perpB-Versatz.
-const LANE = 0.40;         // Quer-Versatz der Rail entlang perpA (Token +, Daten −) — klarer Gap
-const LANE_B = 0.10;       // zweiter Trenn-Versatz entlang perpB → Bänder überlagern aus keinem Winkel voll
-const BAND_W = 0.14;       // Band-Dicke quer (perpA) — dünnes Ribbon, Bänder bleiben getrennt
-const BAND_H = 0.50;       // Band-Höhe (perpB) — Sheet-Volumen bei konstantem Querschnitt
-const AMBIENT_RATE = 26;   // Partikel/s je Kante bei heat=1 (Rate ∝ heat² → hot-konzentriert)
-const AMBIENT_CAP = 90;    // max. Ambient-Spawns pro Frame
+const MAX = 12000;         // Pool-Obergrenze (war 16000) — Dichte-Überschuss zurück, weniger Überlagerung
+const LIFE = 2.1;          // Sekunden actor→target (war 1.7) — etwas länger → mehr Partikel gleichzeitig
+                           // lebendig = dichterer STEHENDER Fluss, sanftere Bewegung (nicht „schnell geschossen")
+const BASE_SIZE = 0.15;    // feiner (war 0.21) → seidiger Fluss wie Neuro.mov statt grobe Körner;
+                           // der additive Glow hält die Punkte trotzdem präsent, Dichte liest als Strom
+// SANDUHR-FÄCHER statt Rechteck-Band: fester Rail-Versatz (±LANE·perpA, ±LANE_B·perpB) +
+// eine Quer-Streuung, die über die Länge mit sin(π·t) atmet — NULL an beiden Knoten (tight
+// rope), MAX in der Kantenmitte (dichter gefiederter Sprüh). Streuung zentrumsgewichtet
+// (Mittel aus 3 Uniformen → heller Kern, dünne Ausläufer), NICHT flach (= Staub).
+const LANE = 0.26;         // Quer-Versatz der Rail entlang perpA (Token +, Daten −) — enger gepackt (war 0.40),
+                           // damit ein DÜNNER Glas-Schlauch (tubes.js) beide Rails eng umschließen kann
+const LANE_B = 0.10;       // zweiter Trenn-Versatz entlang perpB → Rails überlagern aus keinem Winkel voll
+const MAX_SPREAD = 0.14;   // max. Fächer-Halbbreite quer (perpA) in der Mitte (war 0.20) — engeres Bündel,
+                           // damit der Glas-Schlauch dicht herum sitzt (eng-herum-Wunsch); Envelope ~0.40
+const MAX_SPREAD_B = 0.15; // max. Fächer-Halbhöhe (perpB) (war 0.22) — flacherer Ribbon-Fächer → gerichteter Fluss statt Volumen-Staub
+const CORE_WHITE = 1.3;    // Kern-Boost nahe der Rail-Mitte (war 2.2 + neutral-weiß = wusch alles weiß);
+                           // jetzt hue-erhaltend → verstärkt Gold/Cyan statt zu entfärben
+const AMBIENT_RATE = 32;   // Partikel/s je Kante bei heat=1 (war 22) — dichtere stehende Dauer-Flüsse (enger Fächer → Dichte, nicht Breite)
+const AMBIENT_CAP = 120;   // max. Ambient-Spawns pro Frame (war 80) — lässt die Dauer-Flüsse dicht werden
+// STRUKTUR-HEBEL (Neuro.mov = wenige, getrennte Seile): nur Kanten mit ECHTER Hitze streamen.
+// Bis hier stand das Gate bei 0.05 → praktisch jede Kante floss = Volumen-Dunst. Höheres Gate
+// = wenige fette Gold-Seile, viel Schwarz dazwischen. Dial: höher = strenger/leerer, 0.05 = alt.
+const HEAT_GATE = 0.28;
 
 // Runde, weich auslaufende Glow-Textur (einmal gebaut, geteilt).
 function makeGlowTexture() {
@@ -53,6 +65,13 @@ function makeGlowTexture() {
 
 const UP = new THREE.Vector3(0, 1, 0);
 const RIGHT = new THREE.Vector3(1, 0, 0);
+
+// Zentrumsgewichtete Streuung in [-1,1]: Mittel aus 3 Uniformen ≈ Glocken-/Dreiecks-
+// Verteilung → Masse nahe 0 (heller dichter Kern), dünne gefiederte Ausläufer. Bewusst
+// KEINE breite rohe Gauß-Streuung (das war der abgelehnte „Staub"-Look).
+function centerBiased() {
+  return ((Math.random() + Math.random() + Math.random()) / 3 - 0.5) * 2;
+}
 
 export function createFlows(scene, getPosition) {
   // Partikel-Zustand in JS; perpA/perpB = orthonormale Basis quer zur Kante,
@@ -82,6 +101,7 @@ export function createFlows(scene, getPosition) {
   });
   const points = new THREE.Points(geo, mat);
   points.frustumCulled = false;
+  points.renderOrder = 1;   // NACH der Glas-Hülle (tubes.js, renderOrder 0) → Partikel leuchten DURCHS Glas
   scene.add(points);
 
   let activeEdges = [];
@@ -107,9 +127,10 @@ export function createFlows(scene, getPosition) {
       p.perpA.crossVectors(_d, ref).normalize();
       p.perpB.crossVectors(_d, p.perpA).normalize();
     }
-    // Rechteck-Querschnitt (gleichverteilt, keine Bell über die Breite) → Dichte = Partikel/Länge.
-    p.wA = (Math.random() - 0.5) * BAND_W;   // quer (perpA): dünn, hält die Bänder getrennt
-    p.wB = (Math.random() - 0.5) * BAND_H;   // hoch (perpB): gibt dem Band Sheet-Volumen
+    // Normierte, zentrumsgewichtete Fächer-Faktoren in [-1,1] (einmal je Partikel, KEIN
+    // Per-Frame-Jitter) — die Längs-Atmung via sin(π·t) kommt erst beim Rendern dazu.
+    p.wA = centerBiased();   // quer (perpA): Fächer-Faktor, hält die Rails zentriert/getrennt
+    p.wB = centerBiased();   // hoch (perpB): Fächer-Faktor, gibt dem Sprüh Volumen
   }
 
   // Dichte-Mapping Event: Magnitude → Partikelzahl + Grundhelligkeit (log-skaliert).
@@ -117,7 +138,10 @@ export function createFlows(scene, getPosition) {
     const metric = ev.metric === 'bytes' ? 'bytes' : 'tokens';
     const raw = metric === 'bytes' ? Number(ev.bytes) : Number(ev.tokens);
     const mag = Number.isFinite(raw) && raw > 0 ? raw : 0;
-    let count = Math.max(28, Math.min(120, Math.round(34 + Math.log10(1 + mag) * 22)));
+    // DICHTE wie Neuro.mov: mehr Partikel pro Burst (war 48..200) → der über die ganze Kante
+    // gestaffelte Strom wird ein DICHTES Seil statt vereinzelter Sternchen. Enger Fächer hält
+    // die Mehrmenge gebündelt (= Dichte), nicht breit (= Staub).
+    let count = Math.max(90, Math.min(360, Math.round(110 + Math.log10(1 + mag) * 64)));
     if (metric === 'bytes') count = Math.round(count * 0.6);   // Daten sparser → an Dichte erkennbar
     const bright = 0.9 + Math.min(1, Math.log10(1 + mag) / 5) * 0.8;
     return { metric, count, bright };
@@ -139,7 +163,11 @@ export function createFlows(scene, getPosition) {
       }
       const { metric, count, bright } = burstSize(ev);
       const col = new THREE.Color(hex0x(flowColor(metric)));
-      for (let n = 0; n < count; n++) emit(a, b, col, bright, -(n / count) * 0.5, metric);
+      // SEIL statt GESCHOSS: die Start-t über eine VOLLE Kantenlänge staffeln (Spanne 1.0,
+      // war 0.5). So besetzt der Burst im Peak die GANZE Strecke gleichzeitig = durchgehendes
+      // Seil, das sich füllt und wieder leert — statt ein Klumpen, der als Projektil A→B wandert
+      // („eine Seite schießt auf die andere"). Geschwindigkeits-Varianz verschmiert zusätzlich.
+      for (let n = 0; n < count; n++) emit(a, b, col, bright, -(n / count) * 1.0, metric);
       spawnedTotal++;
     } catch (e) {
       l.warn('spawn übersprungen (kaputtes Event):', e.message);
@@ -166,7 +194,7 @@ export function createFlows(scene, getPosition) {
         if (!e || !e.source || !e.target) continue;
         const th = edgeHeat(e, tokenHeatOf);
         const bh = edgeHeat(e, byteHeatOf);
-        if (th <= 0.05 && bh <= 0.05) continue;
+        if (th < HEAT_GATE && bh < HEAT_GATE) continue;   // nur echte Hitze streamt → wenige getrennte Seile
         const a = getPosition(e.source), b = getPosition(e.target);
         if (!a || !b) continue;
         next.push({
@@ -216,27 +244,47 @@ export function createFlows(scene, getPosition) {
       p.t += p.speed * dt;
       if (p.t >= 1) { p.alive = false; continue; }
       if (p.t < 0) continue;
-      // Kernposition = lerp(from→to). Feste Rail-Hälfte (±LANE·perpA, ±LANE_B·perpB) bleibt
-      // über die ganze Länge konstant → die beiden Bänder trennen durchgängig. Nur die
-      // Band-EIGENbreite (wA/wB) tapert längs (bell) → saubere Enden, konstanter Querschnitt.
+      // Kernposition = lerp(from→to) (gerade Bahn beibehalten). Fester Rail-Versatz
+      // (±LANE·perpA, ±LANE_B·perpB) bleibt über die ganze Länge konstant → die zwei Kanäle
+      // (Token +perpA / Daten −perpA) trennen durchgängig.
       _v.lerpVectors(p.from, p.to, p.t);
+      // SANDUHR-FÄCHER: Bell-Hüllkurve sin(π·t) ist 0 an beiden Knoten, 1 in der Mitte.
+      // Quer-Streuung = Fächer-Faktor × MAX_SPREAD × bell → schmaler Strang an BEIDEN Enden,
+      // dichter gefiederter Sprüh zur Kantenmitte. Faktor ist zentrumsgewichtet (heller Kern).
       const bell = Math.sin(p.t * Math.PI);
-      const ax = p.lane * LANE + p.wA * bell;
-      const bx = p.lane * LANE_B + p.wB * bell;
+      const ax = p.lane * LANE + p.wA * MAX_SPREAD * bell;
+      const bx = p.lane * LANE_B + p.wB * MAX_SPREAD_B * bell;
+      const px = _v.x + p.perpA.x * ax + p.perpB.x * bx;
+      const py = _v.y + p.perpA.y * ax + p.perpB.y * bx;
+      const pz = _v.z + p.perpA.z * ax + p.perpB.z * bx;
+      // Helligkeit END-KONZENTRIERT: (1−bell) ist an BEIDEN Knoten max, mittig gedämpft →
+      // helle tight rope an den Enden, weicher Fächer in der Mitte. Leichte Kopf-Gewichtung
+      // (dir) erhält die Richtungs-Lesbarkeit. (Punkt-Größe ist global in PointsMaterial; der
+      // additive Glow lässt die hellen End-Punkte optisch größer blühen = „tighter rope".)
+      const ends = 1 - bell;
+      const dir = 0.85 + 0.30 * (p.t * p.t * (3 - 2 * p.t));   // smoothstep → sanfter Kopf-Bias
+      const b = p.bright * (0.75 + 0.70 * ends) * dir;   // heller gesamt + hellere Mitte (Fächer leuchtet)
+      // Warm-weißer Kern: nahe der Rail-Mitte (|wA| klein) → additiver Boost, warm gewichtet
+      // (R>G>B) → Kern liest weiß-heiß-zu-gold, Fächer-Ränder behalten Amber/Cyan-Tint (CVD-sicher).
+      const core = 1 - Math.min(1, Math.abs(p.wA));
+      // HUE-ERHALTEND: der Kern-Boost verstärkt die EIGENE Farbe (Gold bleibt Gold, Cyan
+      // bleibt Cyan) statt neutrales Weiß draufzulegen (das wusch alles zu Weiß). Nur ein
+      // kleiner warmer Weiß-Anteil (0.16, R>G>B) gibt den heiß-glühenden Kern. → Neuro-Gold-Fächer.
+      const wb = b * core * core * CORE_WHITE;
+      const warm = wb * 0.16;
+      const cr = p.col.r * (b + wb) + warm;
+      const cg = p.col.g * (b + wb) + warm * 0.86;
+      const cb = p.col.b * (b + wb) + warm * 0.55;
+      // HÄRTEN: jeder geschriebene Wert endlich — sonst Partikel überspringen (nie den Draw brechen).
+      if (!Number.isFinite(px) || !Number.isFinite(py) || !Number.isFinite(pz) ||
+          !Number.isFinite(cr) || !Number.isFinite(cg) || !Number.isFinite(cb)) continue;
       const o = write * 3;
-      posAttr[o]     = _v.x + p.perpA.x * ax + p.perpB.x * bx;
-      posAttr[o + 1] = _v.y + p.perpA.y * ax + p.perpB.y * bx;
-      posAttr[o + 2] = _v.z + p.perpA.z * ax + p.perpB.z * bx;
-      // Helligkeit KOPF-GEWICHTET (heller am Ziel) → Richtung sichtbar.
-      const s = p.t * p.t * (3 - 2 * p.t);           // smoothstep(t)
-      const b = p.bright * (0.25 + 0.75 * s);
-      // Weißer Spine PRO BAND: Nähe zur Band-Mittellinie (|wA| klein) → additiver Weiß-Boost
-      // → jedes Ribbon hat seinen eigenen hellen Kern (Referenz-Signatur, je Metrik).
-      const core = 1 - Math.min(1, Math.abs(p.wA) / (BAND_W * 0.5));
-      const wb = b * core * core * core * 1.3;
-      colAttr[o]     = p.col.r * b + wb;
-      colAttr[o + 1] = p.col.g * b + wb;
-      colAttr[o + 2] = p.col.b * b + wb;
+      posAttr[o]     = px;
+      posAttr[o + 1] = py;
+      posAttr[o + 2] = pz;
+      colAttr[o]     = cr;
+      colAttr[o + 1] = cg;
+      colAttr[o + 2] = cb;
       write++;
     }
     aliveCount = write;

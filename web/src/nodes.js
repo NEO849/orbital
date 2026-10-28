@@ -14,6 +14,7 @@
 
 import * as THREE from 'three';
 import { nodeColor, hex0x, BASE } from '../palette.js';
+import { humanLabel } from './entity.js';
 import { log } from './log.js';
 
 const l = log.mod('nodes');
@@ -25,15 +26,92 @@ const GREY = new THREE.Color(hex0x(BASE.dim));   // inaktiv = 12% Richtung dim e
 // session (Protagonist) am größten, tool/server am kleinsten/zurückhaltend.
 // Größe kodiert Wichtigkeit (Referenz-Prinzip): Session groß (Protagonist),
 // Tool/Server klein (viele/Backdrop → treten zurück). Spreizung macht Hierarchie.
+// Box-Maße je Würfel-Typ — EINE Quelle, geteilt von Körper-Geometrie (rund) UND
+// der scharfen Blueprint-Kontur (die braucht echte Kanten, s.u.). Größe wie zuvor.
+const BOX_DIMS = {
+  pipeline: [0.74, 0.46, 0.46],   // größer → Blueprint-Kontur gut lesbar
+  tool:     [0.42, 0.42, 0.42],   // deutlich größer → kleine Tools klar erkennbar
+  brett:    [0.54, 0.54, 0.12],
+  server:   [0.46, 0.50, 0.46],   // größer, Rahmen-Boxen lesbar
+};
+// Eck-Radius je Typ: kleine Fasen → die PMREM-Studio-Env-Highlights fangen sich an
+// den Kanten, die Würfel lesen als BELEUCHTETE Massiv-Körper statt flacher Paneele.
+const BOX_RADIUS = { pipeline: 0.09, tool: 0.08, brett: 0.05, server: 0.08 };
+
+// Kompakte Rund-Würfel-Geometrie (RoundedBoxGeometry ist NICHT gevendort): einen
+// segmentierten Würfel bauen, jeden Vertex auf eine innere Box klemmen und um
+// `radius` nach außen drücken → echte runde Kanten + Ecken. Gesamtmaß bleibt (w,h,d)
+// (Flächenmitten erreichen weiter ±halbe Kante). Fail-open → im Fehlerfall flache Box.
+function roundedBoxGeometry(w, h, d, radius, segments = 8) {
+  try {
+    const r = Math.max(0, Math.min(radius, Math.min(w, h, d) / 2 - 1e-3));
+    const geo = new THREE.BoxGeometry(w, h, d, segments, segments, segments);
+    if (r <= 0) return geo;   // zu dünn für eine Fase → flach lassen
+    const pos = geo.attributes.position;
+    const ex = w / 2 - r, ey = h / 2 - r, ez = d / 2 - r;
+    const v = new THREE.Vector3(), c = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i);
+      // nächster Punkt auf der inneren Box (Klemmen je Achse) …
+      c.set(
+        Math.max(-ex, Math.min(ex, v.x)),
+        Math.max(-ey, Math.min(ey, v.y)),
+        Math.max(-ez, Math.min(ez, v.z)),
+      );
+      // … und um genau `radius` nach außen drücken (Fläche→flach, Kante/Ecke→rund).
+      v.sub(c);
+      const len = v.length();
+      if (len > 1e-6) v.multiplyScalar(r / len).add(c); else v.copy(c);
+      pos.setXYZ(i, v.x, v.y, v.z);
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();   // Normalen neu → Lack/Env gleiten sauber über die Rundung
+    return geo;
+  } catch (err) {
+    l.warn('roundedBoxGeometry fehlgeschlagen, nutze flache Box:', err);
+    return new THREE.BoxGeometry(w, h, d);
+  }
+}
+
+// W5 — Sci-Fi Orbit-Ringe: EINE geteilte Unit-Torus-Geometrie (Radius 1, dünnes Rohr),
+// pro Ring nur Transform + eigenes Material. Additiv geblendet + auf dem Bloom-Layer (W6).
+const RING_GEO = new THREE.TorusGeometry(1, 0.015, 3, 120);
+const SHOCK_GEO = new THREE.TorusGeometry(1, 0.05, 3, 72);   // W7: Fokus-Shockwave (expandierender Ring)
+const BLOOM_LAYER = 1;
+
+// Ringe um einen Knoten legen (Energiekern + Orbit-Ringe). specs: {r, opacity, white, rx,ry,rz,
+// axis, speed}. Rückgabe: [{mesh, mat, axis, speed, baseOpacity}] zum Rotieren/Pulsen im tick.
+function addRings(mesh, col, specs) {
+  const rings = [];
+  for (const s of specs) {
+    const mat = new THREE.MeshBasicMaterial({
+      color: col.clone().lerp(WHITE, s.white ?? 0.35),
+      transparent: true, opacity: s.opacity ?? 0.55,
+      blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+    });
+    const ring = new THREE.Mesh(RING_GEO, mat);
+    ring.scale.setScalar(s.r);
+    ring.rotation.set(s.rx || 0, s.ry || 0, s.rz || 0);
+    ring.layers.enable(BLOOM_LAYER);   // selektiver Bloom (W6) greift hier; rendert jetzt schon normal
+    ring.renderOrder = 2;
+    mesh.add(ring);
+    rings.push({ mesh: ring, mat, axis: s.axis || 'y', speed: s.speed || 0.4, baseOpacity: s.opacity ?? 0.55 });
+  }
+  return rings;
+}
+
+// ALLE Knoten = Energie-Sphären (User: weg von den Billard-/Würfel-Formen). Typ wird über
+// FARBE (palette NODE.*) + GRÖSSE kodiert, nicht mehr über Form: Session groß (Protagonist),
+// tool/server klein (viele/Peripherie). (Würfel-/Oktaeder-Helfer bleiben ungenutzt im Modul.)
 const GEO = {
-  session:   () => new THREE.SphereGeometry(0.70, 44, 30),   // glatte Leucht-Portale (war facettiert, wirkte billig)
-  memory:    () => new THREE.SphereGeometry(0.40, 40, 26),
-  agent:     () => new THREE.OctahedronGeometry(0.40, 0),
-  professor: () => new THREE.OctahedronGeometry(0.40, 0),
-  pipeline:  () => new THREE.BoxGeometry(0.74, 0.46, 0.46),   // größer → Blueprint-Kontur gut lesbar
-  tool:      () => new THREE.BoxGeometry(0.42, 0.42, 0.42),   // deutlich größer → kleine Tools klar erkennbar
-  brett:     () => new THREE.BoxGeometry(0.54, 0.54, 0.12),
-  server:    () => new THREE.BoxGeometry(0.46, 0.50, 0.46),   // größer, Rahmen-Boxen lesbar
+  session:   () => new THREE.SphereGeometry(0.62, 40, 28),   // Protagonist, größter Orb
+  memory:    () => new THREE.SphereGeometry(0.46, 36, 24),
+  agent:     () => new THREE.SphereGeometry(0.40, 32, 22),
+  professor: () => new THREE.SphereGeometry(0.40, 32, 22),
+  pipeline:  () => new THREE.SphereGeometry(0.44, 32, 22),
+  tool:      () => new THREE.SphereGeometry(0.34, 28, 20),
+  brett:     () => new THREE.SphereGeometry(0.40, 30, 20),
+  server:    () => new THREE.SphereGeometry(0.38, 30, 20),
 };
 
 // 3-Band-Material (Graphit-Look in 3D): Farbe in der DIFFUSE (metalness ~0.1),
@@ -46,24 +124,23 @@ const BAND = {
   // statt harter weißer Glanz-Hotspots, die den Cluster "uneinheitlich" wirken ließen.
   heroWarm: { metalness: 0.06, roughness: 0.52, clearcoat: 0.35, clearcoatRoughness: 0.4, env: 0.22, floor: 0.30, activeMax: 1.05, rim: 0.50 },
   mid:      { metalness: 0.10, roughness: 0.42, clearcoat: 0.7, clearcoatRoughness: 0.25, env: 0.45, floor: 0.22, activeMax: 0.9, rim: 0.34 },
+  // machined: tool/server bekommen einen "gefrästes-Metall"-Read (zwischen backdrop und mid):
+  // mehr Clearcoat/Env → die Env-Highlights fangen sich an den neuen runden Kanten,
+  // höherer Emissive-Sockel + kräftigerer Rim → die Schiefer-Würfel lesen als solide
+  // beleuchtete Körper, nicht mehr als flache graue Paneele. Slate-Identität bleibt.
+  machined: { metalness: 0.14, roughness: 0.38, clearcoat: 0.6, clearcoatRoughness: 0.22, env: 0.45, floor: 0.20, activeMax: 0.75, rim: 0.36 },
   backdrop: { metalness: 0.06, roughness: 0.55, clearcoat: 0.4, clearcoatRoughness: 0.35, env: 0.35, floor: 0.16, activeMax: 0.6, rim: 0.18 },
 };
 function bandFor(type) {
   if (type === 'session') return BAND.heroWarm;
   if (type === 'memory') return BAND.hero;
-  if (type === 'tool' || type === 'server') return BAND.backdrop;
-  return BAND.mid;
+  if (type === 'tool' || type === 'server') return BAND.machined;   // war backdrop (flach) → machined
+  return BAND.mid;   // pipeline/brett bleiben mid (schon glänzend → Hierarchie kohärent)
 }
 const geoCache = {};
 function geoFor(type) {
   if (!geoCache[type]) geoCache[type] = (GEO[type] || GEO.tool)();
   return geoCache[type];
-}
-
-// Kurzname fürs Label: id-Präfix abschneiden, auf Länge kappen.
-function shortName(e) {
-  const raw = e.label || (e.id || '').split(':').slice(1).join(':') || e.id || '?';
-  return raw.length > 22 ? raw.slice(0, 21) + '…' : raw;
 }
 
 // Billboard-Label als CanvasTexture-Sprite (Typ klein + Kurzname groß).
@@ -83,7 +160,7 @@ function makeLabel(e) {
   // Kurzname (nahezu weiß → maximale Lesbarkeit)
   g.fillStyle = '#f4f7fb';
   g.font = '700 30px -apple-system,Segoe UI,Helvetica,Arial,sans-serif';
-  g.fillText(shortName(e), 4, 60);
+  g.fillText(humanLabel(e), 4, 60);   // GEMEINSAMER Name mit der HUD-Liste (entity.js)
   const tex = new THREE.CanvasTexture(cv);
   tex.anisotropy = 4; tex.colorSpace = THREE.SRGBColorSpace; tex.needsUpdate = true;
   // depthTest:false → Label wird NIE hinter einer Kugel/Geometrie versteckt (immer-oben-Overlay,
@@ -107,6 +184,20 @@ export function createNodes(scene) {
 
   const nodes = new Map();   // id -> { mesh, mat, label, type }
   const positions = new Map(); // id -> THREE.Vector3 (für flows geteilt)
+  let selectedId = null;       // aktuell im HUD/Klick ausgewählter Knoten (W3a: Liste↔3D)
+  const shocks = [];           // W7: aktive Fokus-Shockwave-Ringe (expandieren + verblassen)
+
+  // Einmaliger Shockwave-Ring am gewählten Knoten (additiv, Bloom-Layer) → kinematischer Klick.
+  function spawnShock(rec) {
+    const mat = new THREE.MeshBasicMaterial({
+      color: WHITE, transparent: true, opacity: 0.7,
+      blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+    });
+    const m = new THREE.Mesh(SHOCK_GEO, mat);
+    m.layers.enable(BLOOM_LAYER); m.renderOrder = 3; m.scale.setScalar(0.6);
+    rec.mesh.add(m);
+    shocks.push({ mesh: m, mat, parent: rec.mesh, t: 0 });
+  }
 
   // Welche Typen tragen ein EINZEL-Label? Tool/Server (viele/Backdrop) und Memory
   // (Cluster — Zonen-Anker separat) NICHT → beseitigt den Zentrums-Label-Stapel.
@@ -124,67 +215,80 @@ export function createNodes(scene) {
     const col = new THREE.Color(hex0x(nodeColor(e.type, e.meta)));
     const band = bandFor(e.type);
     const geo = geoFor(e.type);
-    const mat = new THREE.MeshPhysicalMaterial({
+    // Energie-Sphäre statt Lack-Billardkugel: transluzent-glühender Körper. Identität = Typ-
+    // Farbe (Diffuse), Zustand = Helligkeit (Emissive). Nahezu solide (opacity 0.85), damit der
+    // matte Typ-Ton klar liest; die leichte Transluzenz gibt Tiefe ohne Farbverwässerung.
+    const mat = new THREE.MeshStandardMaterial({
       color: col,
-      metalness: band.metalness,
-      roughness: band.roughness,
-      clearcoat: band.clearcoat,
-      clearcoatRoughness: band.clearcoatRoughness,
-      envMapIntensity: band.env,
       emissive: col.clone(),
-      emissiveIntensity: band.floor,
-      transparent: false,       // NIE transparent — „transparent"-Eindruck war der Hauptfehler
-      opacity: 1,
+      emissiveIntensity: 0.15,
+      roughness: 0.5, metalness: 0.0,
+      transparent: true, opacity: 0.85, depthWrite: true,
     });
     const mesh = new THREE.Mesh(geo, mat);
-    // Premium-Rim: zweite Schale (gleiche Geometrie, BackSide, additiv) = farbige
-    // Identitäts-Kontur, die aus JEDER Distanz poppt (Graphit-Lichtring in 3D).
+    // Energie-Halo: additive BackSide-Hülle = dünnes Kantenlicht (Fresnel-artig), kein Flare.
     const rimMat = new THREE.MeshBasicMaterial({
-      color: col.clone(), transparent: true, opacity: band.rim,   // Backdrop dezent, Hero kräftig
+      color: col.clone(), transparent: true, opacity: 0.10,
       blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.BackSide,
     });
     const rim = new THREE.Mesh(geo, rimMat);
-    rim.scale.setScalar(1.06);
+    rim.scale.setScalar(1.18);
     mesh.add(rim);
-    // Farbige gestrichelte Kanten-Kontur für Würfel-Typen (Blueprint-Look, bessere Lesbarkeit).
-    let edgeGeo = null, edgeMat = null;
-    if (BOXY.has(e.type)) {
-      edgeGeo = new THREE.EdgesGeometry(geo);
-      edgeMat = new THREE.LineDashedMaterial({
-        color: col.clone().lerp(WHITE, 0.65),   // stark aufgehellt → klar glühende Kontur
-        transparent: true, opacity: 1.0, depthWrite: false,
-        blending: THREE.AdditiveBlending,        // additiv → Kontur leuchtet gegen den dunklen Grund
-        dashSize: 0.1, gapSize: 0.04,
-      });
-      const outline = new THREE.LineSegments(edgeGeo, edgeMat);
-      outline.computeLineDistances();            // Pflicht für gestrichelte Linien
-      outline.scale.setScalar(1.05);             // minimal außen, saubere Kontur
-      mesh.add(outline);
-    }
+    const rings = null;   // (W5-Orbit-Ringe entfernt — würden mit den Saturn-Ringen clashen)
+    const edgeGeo = null, edgeMat = null;   // (Würfel-Blueprint-Konturen entfallen — alles Sphären)
     let label = null;
     if (LABELED.has(e.type)) { label = makeLabel(e); mesh.add(label); }
     mesh.userData.baseColor = col.clone();
     mesh.userData.entityId = e.id;   // für Picking (Klick → Detail-Panel)
     group.add(mesh);
-    return { mesh, mat, rim, rimMat, edgeGeo, edgeMat, label, band, type: e.type };
+    return { mesh, mat, rim, rimMat, edgeGeo, edgeMat, label, band, type: e.type, rings };
   }
 
-  // heat → Helligkeit: emissive = lerp(baseColor → weiß, heat), Intensität ∝ heat.
-  // Material-color bleibt unverändert = Identität bleibt lesbar.
+  // heat → Helligkeit (Energie-Sphäre, Design-Spezialist-Kalibrierung, dezent):
+  // Identität = Typ-Farbe (Diffuse/Emissive), Zustand = Helligkeit + Körper-Dichte.
   function applyHeat(rec, heat, active) {
     const h = Math.max(0, Math.min(1, Number(heat) || 0));
+    rec._heat = h; rec._active = active;   // cachen → setSelected kann ohne State neu anwenden
     const base = rec.mesh.userData.baseColor;
-    // heat hebt NUR die Emissive (Farbe bleibt in der Diffuse → Identität nie ausgewaschen).
-    // Weiß-Lerp bis 0.40 gekappt: heiße Knoten glühen, behalten aber kräftige Chroma.
-    rec.mat.emissive.copy(base).lerp(WHITE, h * 0.40);
-    const fl = rec.band.floor, mx = rec.band.activeMax;
-    // Sockel trägt die Identitätsfarbe immer (auch fern/ruhig); aktiv steigt bis activeMax.
-    rec.mat.emissiveIntensity = active ? (fl + h * (mx - fl)) : fl * 0.5;
-    // Zustand „inaktiv" = dunkleres Emissive + 12% entsättigte Farbe — NICHT Transparenz.
+    // Emissive = Typ-Farbe; nur bei Extrem-Last ein Hauch Weiß (Typ bleibt immer lesbar).
+    rec.mat.emissive.copy(base).lerp(WHITE, h * h * 0.18);
+    // Floor 0.15 (gerade sichtbar im Graphit), aktiv bis 0.65 (energetisiert, typ-farbig,
+    // ~0.80 Luminanz = knapp an der Bloom-Schwelle 0.78 → zarter Schimmer, kein Grell).
+    rec.mat.emissiveIntensity = active ? (0.15 + h * 0.50) : 0.06;
+    // Körper fast solide (0.85) → matter Typ-Ton liest klar; aktiv minimal dichter (bis 0.95).
+    rec.mat.opacity = active ? (0.85 + h * 0.10) : 0.80;
     if (active) rec.mat.color.copy(base);
-    else rec.mat.color.copy(base).lerp(GREY, 0.12);
-    // Gestrichelte Kontur bei Aktivität etwas kräftiger (dezente Heat-Reaktion).
-    if (rec.edgeMat) rec.edgeMat.opacity = active ? (0.6 + h * 0.35) : 0.45;
+    else rec.mat.color.copy(base).lerp(GREY, 0.22);   // inaktiv = stärker entsättigt → tritt als Backdrop zurück, aber nicht transparent
+    // Energie-Halo: idle 0.10, aktiv bis 0.25 (dünnes Kantenlicht, kein Flare).
+    // WICHTIG: JEDEN Call für ALLE Typen frisch setzen → der Fokus-Dim unten (×0.5)
+    // akkumuliert sonst gegen 0 und der Rim bliebe dauerhaft gefadet.
+    if (rec.rimMat) rec.rimMat.opacity = active ? (0.10 + h * 0.15) : 0.08;
+    // ── Auswahl-Hervorhebung (W3a) GANZ am Ende — dezenter, premium (kein Weißbrand).
+    const isSel = rec.mesh.userData.entityId === selectedId;
+    if (isSel) {
+      rec.mat.emissiveIntensity = Math.min(1.1, rec.mat.emissiveIntensity * 1.5 + 0.2);
+      rec.mat.opacity = 0.95;
+      if (rec.rimMat) rec.rimMat.opacity = Math.min(0.5, (rec.rimMat.opacity || 0) + 0.25);
+      if (rec.rim) rec.rim.scale.setScalar(1.28);
+    } else if (rec.rim) {
+      rec.rim.scale.setScalar(1.18);   // Normal-Halo
+      // W7: ist IRGENDEIN Knoten fokussiert, treten die übrigen dezent zurück.
+      if (selectedId) {
+        rec.mat.emissiveIntensity *= 0.45;
+        if (rec.rimMat) rec.rimMat.opacity *= 0.5;
+      }
+    }
+  }
+
+  // Auswahl setzen (von main.js via aos:detail getrieben → Liste↔3D bidirektional).
+  // Re-rendert alle Knoten mit ihren gecachten heat/active-Werten, damit der Boost
+  // sofort greift (nicht erst beim nächsten State-Update).
+  function setSelected(id) {
+    const next = id || null;
+    if (next === selectedId) return;
+    selectedId = next;
+    for (const rec of nodes.values()) applyHeat(rec, rec._heat || 0, rec._active !== false);
+    if (next) { const rec = nodes.get(next); if (rec) spawnShock(rec); }   // W7: Shockwave am neuen Fokus
   }
 
   // DIFF-Update gegen die aktuelle Entity-Liste + Positions-Map aus layout.js.
@@ -219,6 +323,7 @@ export function createNodes(scene) {
       if (rec.rimMat) rec.rimMat.dispose();   // Rim-Schale teilt die Geometrie (nicht disposen), nur das Material
       if (rec.edgeGeo) rec.edgeGeo.dispose();  // EdgesGeometry ist EIGENE Geometrie → disposen
       if (rec.edgeMat) rec.edgeMat.dispose();
+      if (rec.rings) for (const r of rec.rings) r.mat.dispose();   // Ring-Material (Geo ist geteilt → bleibt)
       nodes.delete(id);
       positions.delete(id);
     }
@@ -254,11 +359,27 @@ export function createNodes(scene) {
   // Distanz-Skalierung: beim RAUSzoomen werden Knoten größer (bis 1.8×), damit sie nie
   // unter Lesbarkeit fallen; nah bleiben sie normal (0.9×). Rim folgt (Kind, 1.06× lokal);
   // das Label gegen-skaliert → Weltgröße konstant. camDist = Kamera-Abstand (orbit.radius).
+  let ringT = 0;
   function tick(dt, camDist) {
     const s = Math.max(0.9, Math.min(1.8, (camDist || 24) / 24));
+    ringT += dt;
     for (const rec of nodes.values()) {
       rec.mesh.scale.setScalar(s);
       if (rec.label) rec.label.scale.set(1.8 / s, 0.5 / s, 1);
+      // Orbit-Ringe drehen (gegenläufig) + dezent atmen → lebendiger Sci-Fi-Knoten.
+      if (rec.rings) for (const r of rec.rings) {
+        r.mesh.rotation[r.axis] += r.speed * dt;
+        r.mat.opacity = r.baseOpacity * (0.78 + 0.22 * Math.sin(ringT * 1.6 * (r.speed > 0 ? 1 : -1.3)));
+      }
+    }
+    // W7: Shockwave-Ringe expandieren + verblassen, dann sauber entfernen.
+    for (let i = shocks.length - 1; i >= 0; i--) {
+      const sh = shocks[i];
+      sh.t += dt * 1.7;
+      const k = Math.min(1, sh.t);
+      sh.mesh.scale.setScalar(0.6 + k * 2.8);
+      sh.mat.opacity = 0.7 * (1 - k) * (1 - k);
+      if (sh.t >= 1) { sh.parent.remove(sh.mesh); sh.mat.dispose(); shocks.splice(i, 1); }
     }
   }
 
@@ -267,6 +388,7 @@ export function createNodes(scene) {
     update,
     updateEdges,
     tick,
+    setSelected,
     // flows.js fragt Positionen per id ab (geteilte, lebende Vector3-Referenzen).
     getPosition: (id) => positions.get(id) || null,
     count: () => nodes.size,

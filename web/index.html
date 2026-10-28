@@ -3,19 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>AOS-1 Observatory</title>
-<meta name="description" content="AOS-1 Observatory — 3D-Echtzeit-Visualisierung der Claude-Telemetrie (read-only).">
+<title>Orbital</title>
+<meta name="description" content="Orbital — 3D-Echtzeit-Visualisierung der Claude-Telemetrie (read-only).">
 <!--
   Shell für die modulare 3D-App. Verantwortung hier: NUR Gerüst —
-   - importmap bindet das lokal gevendorte three ein (self-contained, keine CDN),
+   - three kommt aus npm (Vite-Bundle, keine importmap -> nur EINE three-Instanz),
    - ein festes Grid-Layout (Rahmen aus HUD-Panels, zentrales #scene-Canvas),
-   - Start von src/main.js als ES-Modul.
+   - Start von src/boot.jsx als ES-Modul.
   Alle Farben/Logik liegen in palette.js bzw. src/*. prefers-reduced-motion /
   prefers-contrast werden in den Modulen + unten respektiert.
 -->
-<script type="importmap">
-{ "imports": { "three": "./vendor/three.module.js" } }
-</script>
 <style>
   :root{ --aos-bg:#0b0d0c; --gutter:14px; --side:300px; }
   *{ box-sizing:border-box; }
@@ -66,6 +63,6 @@
     <aside id="hud-right"></aside>
     <footer id="hud-bottom"></footer>
   </div>
-  <script type="module" src="./src/main.js"></script>
+  <script type="module" src="./src/boot.jsx"></script>
 </body>
 </html>

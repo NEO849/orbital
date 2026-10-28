@@ -25,7 +25,7 @@ import collector  # read_events(), STATE_FILE
 BIND = config.BIND   # Public-Default 127.0.0.1; Betreiber-IP nur via aos.local.json
 PORT = config.PORT   # finalen Port waehlt der Betrieb (CLI-Arg hat Vorrang)
 HERE = os.path.dirname(os.path.abspath(__file__))
-WEB_DIR = os.path.join(os.path.dirname(HERE), "web")
+WEB_DIR = os.environ.get("AOS_WEB_DIR") or os.path.join(os.path.dirname(HERE), "web")
 STATE_FILE = collector.STATE_FILE
 
 # statische Datei-Endungen -> Content-Type (fuer web/*)
@@ -37,6 +37,9 @@ CTYPES = {
     ".svg": "image/svg+xml",
     ".png": "image/png",
     ".ico": "image/x-icon",
+    ".woff2": "font/woff2",
+    ".wasm": "application/wasm",
+    ".map": "application/json; charset=utf-8",
 }
 
 log = logging.getLogger("aos.serve")

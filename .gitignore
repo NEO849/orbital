@@ -34,3 +34,10 @@ _ref/
 
 # (6) OS-Kram
 .DS_Store
+
+# Vite/npm (Orbital R3F-Migration)
+web/node_modules/
+web/dist/
+
+# (7) Wegwerf-Dev-Screenshots -> nur das Werkzeug capture.py wird versioniert
+screenshots/*.png
