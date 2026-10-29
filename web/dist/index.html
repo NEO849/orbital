@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Orbital</title>
+<meta name="description" content="Orbital — 3D-Echtzeit-Visualisierung der Claude-Telemetrie (read-only).">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Orbital — your whole agent operation, in 3D">
+<meta property="og:description" content="A real-time 3D mission-control for a Claude agent operation. The engine is public; your data never leaves your machine.">
+<meta property="og:image" content="./social-preview.png">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Orbital — your whole agent operation, in 3D">
+<meta name="twitter:description" content="Real-time 3D mission-control for a Claude agent operation. Local-only, read-only.">
+<meta name="twitter:image" content="./social-preview.png">
+<!--
+  Shell für die modulare 3D-App. Verantwortung hier: NUR Gerüst —
+   - three kommt aus npm (Vite-Bundle, keine importmap -> nur EINE three-Instanz),
+   - ein festes Grid-Layout (Rahmen aus HUD-Panels, zentrales #scene-Canvas),
+   - Start von src/boot.jsx als ES-Modul.
+  Alle Farben/Logik liegen in palette.js bzw. src/*. prefers-reduced-motion /
+  prefers-contrast werden in den Modulen + unten respektiert.
+-->
+<style>:root{--aos-bg:#0b0d0c;--gutter:14px;--side:300px}*{box-sizing:border-box}html,body{background:var(--aos-bg);color:#e8ecf2;height:100%;margin:0;font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;overflow:hidden}#app{gap:var(--gutter);padding:var(--gutter);grid-template-columns:var(--side) 1fr var(--side);grid-template-rows:auto minmax(0,1fr) auto;grid-template-areas:"top top top""left scene right""bottom bottom bottom";display:grid;position:fixed;inset:0}#hud-top{grid-area:top}#left-col{gap:var(--gutter);flex-direction:column;grid-area:left;min-width:0;min-height:0;display:flex}#hud-left{flex-direction:column;flex:auto;min-height:0;display:flex;overflow:hidden}#spotlight{flex:none;max-height:46%;overflow:auto}#hud-right{grid-area:right;min-height:0;overflow-y:auto}#hud-bottom{grid-area:bottom}#scene-cell{border:1px solid #ffffff0f;grid-area:scene;min-width:0;min-height:0;position:relative;overflow:hidden}#scene{position:absolute;inset:0}@media (max-width:860px){#app{grid-template:"top""scene"minmax(220px,1fr)"left""right""bottom"/1fr}#hud-left{max-height:40vh}:root{--gutter:12px}}@media (prefers-contrast:more){#scene-cell{border-color:#fff}}</style>
+  <script type="module" crossorigin src="./assets/index-Cfxa4ZTZ.js"></script>
+</head>
+<body>
+  <div id="app">
+    <header id="hud-top"></header>
+    <aside id="left-col">
+      <div id="hud-left"></div>
+      <div id="spotlight"></div>
+    </aside>
+    <section id="scene-cell">
+      <div id="scene"></div>
+    </section>
+    <aside id="hud-right"></aside>
+    <footer id="hud-bottom"></footer>
+  </div>
+</body>
+</html>

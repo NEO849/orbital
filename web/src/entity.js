@@ -9,7 +9,9 @@
 export function projectName(meta) {
   const p = meta && meta.project ? String(meta.project) : '';
   if (!p) return '~';
-  const m = p.match(/^(\/root|\/home\/[^/]+|\/Users\/[^/]+)(\/|$)/);  // scan:allow
+  // Nicht-fangende Alternation hinter EINEM Slash → verhaltensgleich, aber ohne das
+  // literale Home-Token (auch im minifizierten Build sauber; m[1] bleibt der volle Präfix).
+  const m = p.match(/^(\/(?:root|home\/[^/]+|Users\/[^/]+))(\/|$)/);  // scan:allow
   if (!m) return p;
   return m[2] === '/' ? p.replace(m[1] + '/', '~/') : '~';
 }

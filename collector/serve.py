@@ -25,7 +25,11 @@ import collector  # read_events(), STATE_FILE
 BIND = config.BIND   # Public-Default 127.0.0.1; Betreiber-IP nur via aos.local.json
 PORT = config.PORT   # finalen Port waehlt der Betrieb (CLI-Arg hat Vorrang)
 HERE = os.path.dirname(os.path.abspath(__file__))
-WEB_DIR = os.environ.get("AOS_WEB_DIR") or os.path.join(os.path.dirname(HERE), "web")
+# Default: das mitgelieferte Vite-Build (web/dist); Fallback web/ fuer Dev ohne Build.
+# Betrieb/Dev ueberschreibt per AOS_WEB_DIR.
+_WEB_ROOT = os.path.dirname(HERE)
+_DIST = os.path.join(_WEB_ROOT, "web", "dist")
+WEB_DIR = os.environ.get("AOS_WEB_DIR") or (_DIST if os.path.isdir(_DIST) else os.path.join(_WEB_ROOT, "web"))
 STATE_FILE = collector.STATE_FILE
 
 # statische Datei-Endungen -> Content-Type (fuer web/*)

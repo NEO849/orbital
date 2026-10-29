@@ -18,9 +18,9 @@ streaming along the edges that are live right now. <b>The engine is public; your
 &nbsp;
 ![Python](https://img.shields.io/badge/Python-3.9+-2b3440?style=flat-square&logo=python&logoColor=9aa39c&labelColor=0b0d0c)
 &nbsp;
-![Dependencies](https://img.shields.io/badge/Dependencies-0_·_stdlib_only-2b3440?style=flat-square&labelColor=0b0d0c)
+![Backend](https://img.shields.io/badge/Backend-0_deps_·_stdlib-2b3440?style=flat-square&labelColor=0b0d0c)
 &nbsp;
-![Render](https://img.shields.io/badge/Render-WebGL_·_three.js-2b3440?style=flat-square&labelColor=0b0d0c)
+![Render](https://img.shields.io/badge/Render-WebGL_·_React_Three_Fiber-2b3440?style=flat-square&labelColor=0b0d0c)
 &nbsp;
 ![Privacy](https://img.shields.io/badge/Privacy-local--only-1f7a33?style=flat-square&labelColor=0b0d0c)
 &nbsp;
@@ -80,7 +80,7 @@ Three small parts, joined only by two files on disk:
 |---|---|
 | **Producer** (`demo.py` *or* `collector.py`) | writes the current state to `state.json` + `events.jsonl` |
 | **Server** (`serve.py`) | a GET-only reader that serves those two files and the web app |
-| **Web** (`web/`, vendored three.js) | renders the rotatable 3D particle graph in the browser |
+| **Web** (`web/`, Vite + React + React-Three-Fiber) | renders the rotatable 3D particle graph in the browser (built to `web/dist/`) |
 
 The producer is **swappable** — that is the whole design. The server and the web app never know
 where the data came from; they only read what is on disk. So "real" and "synthetic" are
@@ -91,8 +91,10 @@ interchangeable without touching anything downstream.
 | `demo.py` | **nothing** — invents a fictional company and animates it over wall-clock time | the public demo, showing what the tool *can* display |
 | `collector.py` | `~/.claude` (session transcripts, memory, services) **read-only** | your own live operation |
 
-It is small enough to read in one sitting: **~3,900 lines of its own code across 16 files**, plus a
-vendored three.js runtime. No build step, no `npm`, no pip dependencies — Python standard library only.
+It stays small enough to read in one sitting. The Python side — producer **and** server — is
+**dependency-free: standard library only, no pip.** The browser app is a compact **Vite + React +
+[React-Three-Fiber](https://r3f.docs.pmnd.rs/)** project, shipped pre-built in `web/dist/` so running
+needs no toolchain (rebuilding the UI uses Vite — see `web/`).
 
 ---
 
@@ -114,7 +116,7 @@ flowchart LR
       C[collector.py<br/>live · reads ~/.claude READ-ONLY] --> F
     end
 
-    S --> W[web/ · three.js<br/>3D particle graph]
+    S --> W[web/ · React-Three-Fiber<br/>3D particle graph]
     local -. no network, never executes anything .-> X((your data never leaves))
 ```
 
@@ -180,13 +182,13 @@ Every name, port and number in the demo is **invented** — it is illustrative, 
 ![Run](https://img.shields.io/badge/Run-141820?style=for-the-badge&labelColor=0b0d0c)
 
 ```sh
-git clone https://github.com/NEO849/orbital
+git clone https://github.com/engramdev/orbital
 cd orbital
 ./run.sh                      # synthetic demo (default) -> http://127.0.0.1:8080
 ```
 
-Open `http://127.0.0.1:8080` and drag to orbit the scene. Requires only `python3` (3.9+); three.js
-is vendored, so there is **no build and no `npm`**.
+Open `http://127.0.0.1:8080` and drag to orbit the scene, scroll to zoom. The web app ships
+pre-built in `web/dist/`, so running needs only `python3` (3.9+) — **no `npm` to run.**
 
 ```sh
 AOS_PORT=9000 ./run.sh        # a different port
@@ -228,7 +230,7 @@ Run `python3 collector/config.py` to print the resolved configuration (no secret
 
 ```
 collector/   config.py (SSOT) · demo.py (synthetic) · collector.py (live) · serve.py (GET-only)
-web/         index.html · palette.js · src/*.js (scene, layout, nodes, flows, hud …) · vendor/ (three.js)
+web/         Vite + React-Three-Fiber app · src/ (scene, layout, nodes, flows, hud, r3f/ …) · dist/ (pre-built) · package.json
 tools/       scan_private.py (the leak gate)
 run.sh       one-command launch · SCHEMA.md  the producer<->web data contract
 ```
@@ -241,7 +243,7 @@ run.sh       one-command launch · SCHEMA.md  the producer<->web data contract
 
 ![License](https://img.shields.io/badge/License-MIT-2b3440?style=flat-square&labelColor=0b0d0c)
 &nbsp;
-![Built with](https://img.shields.io/badge/Built_with-Python_·_three.js-2b3440?style=flat-square&labelColor=0b0d0c)
+![Built with](https://img.shields.io/badge/Built_with-Python_·_React_Three_Fiber-2b3440?style=flat-square&labelColor=0b0d0c)
 
 MIT — see [`LICENSE`](LICENSE).
 
