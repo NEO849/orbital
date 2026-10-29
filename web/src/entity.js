@@ -4,7 +4,7 @@
 // Liste "~/work/bravo" und das 3D-Label "root-fd" für dieselbe Session (Liste↔3D-Divergenz).
 // Reine Funktionen, keine Seiteneffekte, fail-open.
 
-// Home-Präfix → '~' kürzen (generisch für /root, /home/<user>, /Users/<user>).
+// Home-Präfix → '~' kürzen (generisch für Home-Verzeichnisse, Muster siehe unten).
 // Diese Referenz STRIPPT einen Pfad, sie leakt keinen → vom Leak-Scanner ausgenommen.
 export function projectName(meta) {
   const p = meta && meta.project ? String(meta.project) : '';

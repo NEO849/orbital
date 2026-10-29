@@ -7,7 +7,7 @@ und liefert schwarze Screenshots — headless rendert dagegen IMMER.
 
 Aufruf:
     python3 capture.py [URL] [WELLE]
-Default-URL: http://100.80.155.28:8942/?capture=1  (Sandbox, Tailscale-Bind)
+Default-URL: http://127.0.0.1:8942/?capture=1  (Loopback; Operator uebergibt Bind-URL als argv[1])
 Default-WELLE: r3   -> Dateien screenshots/<welle>-desktop.png + <welle>-mobile.png
 
 Wartet auf window.__frameReady (erster wirklich gerenderte Frame, gesetzt in main.js),
@@ -18,7 +18,7 @@ import sys
 import pathlib
 from playwright.sync_api import sync_playwright
 
-URL = sys.argv[1] if len(sys.argv) > 1 else "http://100.80.155.28:8942/?capture=1"
+URL = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8942/?capture=1"
 WAVE = sys.argv[2] if len(sys.argv) > 2 else "r3"
 OUT = pathlib.Path(__file__).parent
 VIEWPORTS = {"desktop": (1440, 900), "mobile": (390, 844)}
