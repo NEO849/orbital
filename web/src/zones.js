@@ -1,24 +1,25 @@
-// AOS-1 Observatory — src/zones.js
-// Verantwortung: die ZONEN-GRENZEN — pro Typ-Zone eine dezente Wireframe-Box + ein
-// Text-Label ("BRAIN"/"AGENTEN"/…). Macht "jeder Typ an seinem Platz" selbsterklärend,
-// ohne den Graphen zuzukleistern (Graphit-Look: scharfe Hairlines, kein Glow).
+// Orbital — src/zones.js
+// Verantwortung: die Saturn-RING-Ebene — pro vorhandenem Typ eine feine Laser-Ring-Linie
+// (die „Bahn", auf der die Knoten sitzen) + ein Orientierungs-Label je Ring („BRAIN"/
+// „SESSIONS"/…). Macht „jeder Typ auf seinem Ring" selbsterklärend.
 //
-// Modular: kennt nur den `zones`-Export aus layout.js (Sektor-Geometrie) + palette.
+// Die Ring-Linie kommt aus layout.ringPath() — GLEICHE Formel wie die Knoten-Platzierung →
+// die Linie läuft garantiert genau durch die Knoten des Typs. Feine additive Linie =
+// Hausstil „feine Laser-Ringe" (Machined Graphite), kein dicker Deko-Reif.
+//
 // Vertrag: createZones(scene) → { group, rebuild(zones, counts), tick(camDist),
-//          setVisible(bool), destroy() }. main.js ruft rebuild bei Entity-Diff, tick je Frame.
-//
-// Fade (invers zu Node-Labels): fern = Orientierung über Zonen (Boxen/Labels ein),
-// nah = Detail über Node-Labels (Zonen aus). camDist = Kamera-Abstand (orbit.radius).
+//          setVisible(bool), destroy() }. main.js ruft rebuild bei Entity-Typ-Diff.
+// Label-Fade invers zum Zoom: fern = Labels an (Orientierung), nah = aus (Detail).
 
 import * as THREE from 'three';
-import { BASE, hex0x } from '../palette.js';
+import { BASE, NODE } from '../palette.js';
+import { ringPath } from './layout.js';
 import { log } from './log.js';
 
 const l = log.mod('zones');
-const DEG = Math.PI / 180;
 
-// Ein Label je Zone (7 statt N). memory = "BRAIN" (Betreiber-Wunsch). professor teilt
-// die Agenten-Zone → kein eigenes Label (Count wird in AGENTEN mitgezählt).
+// Ein Label je Ring (memory = „BRAIN", Betreiber-Wunsch). professor teilt die agent-Bahn →
+// kein eigenes Label (Count fließt in AGENTEN).
 const TEXT = {
   memory:   'BRAIN',
   session:  'SESSIONS',
@@ -29,7 +30,7 @@ const TEXT = {
   server:   'SERVER',
 };
 
-// Zonen-Label als billboarded CanvasTexture-Sprite (mono, uppercase, gedämpft).
+// Schalen-Label als billboarded CanvasTexture-Sprite (mono, uppercase, gedämpft).
 function makeLabel(text) {
   const W = 256, H = 64, dpr = 2;
   const cv = document.createElement('canvas');
@@ -38,9 +39,8 @@ function makeLabel(text) {
   g.scale(dpr, dpr);
   g.textBaseline = 'middle';
   g.font = '600 26px ui-monospace,Menlo,Consolas,monospace';
-  // Dunkler Schatten gegen den hellen Strom-Hintergrund → Text hebt sich ab (Lesbarkeit).
   g.shadowColor = 'rgba(0,0,0,0.85)'; g.shadowBlur = 5;
-  g.fillStyle = BASE.text;   // heller (war gedämpftes Grau) → besser lesbar
+  g.fillStyle = BASE.text;
   g.fillText(text, 4, H / 2);
   const tex = new THREE.CanvasTexture(cv);
   tex.anisotropy = 4; tex.colorSpace = THREE.SRGBColorSpace; tex.needsUpdate = true;
@@ -51,103 +51,67 @@ function makeLabel(text) {
   return sp;
 }
 
+// Feine Ring-Linie (LineLoop) aus layout.ringPath(type), eingefärbt in der Typ-Identität.
+function makeRing(type) {
+  const arr = ringPath(type, 180);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+  const mat = new THREE.LineBasicMaterial({
+    color: new THREE.Color(NODE[type] || BASE.zoneLine),
+    transparent: true, opacity: 0.30,
+    blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false,
+  });
+  const loop = new THREE.LineLoop(geo, mat);
+  loop.renderOrder = 0;   // hinter die Knoten
+  return loop;
+}
+
 export function createZones(scene) {
   const group = new THREE.Group();
   scene.add(group);
 
-  const lines = [];    // LineSegments (Box-Kanten)
-  const labels = [];   // Sprites
+  const labels = [];     // Sprites
+  const rings = [];      // LineLoops
 
   function clear() {
-    for (const seg of lines) { group.remove(seg); seg.geometry.dispose(); seg.material.dispose(); }
     for (const lab of labels) { group.remove(lab); lab.userData.tex.dispose(); lab.material.dispose(); }
-    lines.length = 0; labels.length = 0;
+    for (const r of rings) { group.remove(r); r.geometry.dispose(); r.material.dispose(); }
+    labels.length = 0; rings.length = 0;
   }
 
-  // Eine achsenparallele Wireframe-Box (12 Kanten) um die Box3 legen.
-  function addBox(box) {
-    const size = new THREE.Vector3(); box.getSize(size);
-    const center = new THREE.Vector3(); box.getCenter(center);
-    const bg = new THREE.BoxGeometry(Math.max(0.1, size.x), Math.max(0.1, size.y), Math.max(0.1, size.z));
-    const geo = new THREE.EdgesGeometry(bg);
-    bg.dispose();
-    // GESTRICHELT statt durchgezogen: liest als „Zone/Grenze" (wie ein Auswahl-Rahmen),
-    // nicht als solides Objekt — kräftiger erlaubt, ohne den Graphen zuzukleistern.
-    const mat = new THREE.LineDashedMaterial({
-      color: hex0x(BASE.zoneLine), transparent: true, opacity: 0, depthWrite: false,
-      dashSize: 0.35, gapSize: 0.22,
-    });
-    const seg = new THREE.LineSegments(geo, mat);
-    seg.computeLineDistances();   // Pflicht für LineDashedMaterial (sonst durchgezogen)
-    seg.position.copy(center);
-    group.add(seg);
-    lines.push(seg);
-  }
-
-  // Box + Label je Zone aus dem layout.js-`zones`-Export neu aufbauen.
+  // Ring-Linien + Labels aus den layout-Ring-Parametern (zones) neu aufbauen.
+  // Nur für Typen mit tatsächlich vorhandenen Knoten (counts[type] > 0).
   function rebuild(zones, counts) {
     try {
       clear();
       if (!zones) return;
-      const ySquash = zones._ySquash || 0.55;
-      const memR = zones._memRadius || 2.3;
+      const anchors = zones._anchors || {};
       const cnt = counts || {};
+      const types = (zones._order || Object.keys(zones)).filter((t) => t[0] !== '_');
 
-      for (const type of Object.keys(TEXT)) {
-        let box, labelPos;
+      for (const type of types) {
+        if (!(cnt[type] > 0)) continue;              // leerer Typ → kein Ring/Label
+        const ring = makeRing(type); group.add(ring); rings.push(ring);
 
-        if (type === 'memory') {
-          // zentraler Würfel um Origin (Y gestaucht wie die Memory-Wolke).
-          box = new THREE.Box3(
-            new THREE.Vector3(-memR, -memR * ySquash, -memR),
-            new THREE.Vector3(memR, memR * ySquash, memR),
-          );
-          labelPos = new THREE.Vector3(memR, memR * ySquash + 0.3, memR);
-        } else {
-          const z = zones[type];
-          if (!z) continue;
-          const [cDeg, halfDeg, rMin, rMax] = z;
-          const aMin = (cDeg - halfDeg) * DEG, aMax = (cDeg + halfDeg) * DEG;
-          const rSpan = rMax - rMin;
-          const yExt = rSpan * 0.3 * ySquash + 0.2;   // entspricht der vertikalen Streuung in layout.js
-          // Sektor-Hülle samplen (mehrere Winkel → AABB fängt die Krümmung).
-          let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
-          for (let k = 0; k <= 4; k++) {
-            const a = aMin + (aMax - aMin) * (k / 4);
-            for (const r of [rMin, rMax]) {
-              const x = Math.cos(a) * r, zz = Math.sin(a) * r;
-              if (x < minX) minX = x; if (x > maxX) maxX = x;
-              if (zz < minZ) minZ = zz; if (zz > maxZ) maxZ = zz;
-            }
-          }
-          box = new THREE.Box3(
-            new THREE.Vector3(minX, -yExt, minZ),
-            new THREE.Vector3(maxX, yExt, maxZ),
-          );
-          const ca = cDeg * DEG;
-          labelPos = new THREE.Vector3(Math.cos(ca) * rMax, yExt + 0.3, Math.sin(ca) * rMax);
-        }
-
-        addBox(box);
-
+        if (!TEXT[type]) continue;                   // professor etc. → kein eigenes Label
+        const a = anchors[type]; if (!a) continue;
         let count = cnt[type] || 0;
-        if (type === 'agent') count += cnt.professor || 0;   // Professoren teilen die Agenten-Zone
+        if (type === 'agent') count += cnt.professor || 0;   // Professoren teilen die Agenten-Bahn
         const label = makeLabel(count ? `${TEXT[type]} · ${count}` : TEXT[type]);
-        label.position.copy(labelPos);
-        group.add(label);
-        labels.push(label);
+        label.position.set(a.x, a.y, a.z);
+        group.add(label); labels.push(label);
       }
-      l.debug('Zonen neu gebaut:', lines.length);
+      l.debug('Ringe + Labels neu gebaut:', rings.length, '/', labels.length);
     } catch (e) {
       l.warn('rebuild übersprungen:', e.message);
     }
   }
 
-  // Inverser Fade: beim RAUSzoomen ein (Orientierung), beim REINzoomen aus (Detail).
+  // Inverser Fade der Labels: beim RAUSzoomen ein (Orientierung), beim REINzoomen aus.
+  // Ring-Linien bleiben konstant dezent (strukturelle Bahn, immer sichtbar).
   function tick(camDist) {
     const f = Math.max(0, Math.min(1, ((camDist || 24) - 16) / 14));
-    for (const seg of lines) seg.material.opacity = 0.30 * f;   // kräftiger als Hairline (gestrichelt trägt mehr)
-    for (const lab of labels) lab.material.opacity = 0.80 * f;   // heller lesbar (war 0.55)
+    for (const lab of labels) lab.material.opacity = 0.80 * f;
   }
 
   function setVisible(b) { group.visible = !!b; }

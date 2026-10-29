@@ -11,6 +11,7 @@
 // Reines DOM/CSS, Farben nur aus palette.js; kennt three NICHT.
 
 import { PALETTE, nodeColor } from '../palette.js';
+import { humanLabel } from './entity.js';
 import { log } from './log.js';
 
 const l = log.mod('detail');
@@ -160,12 +161,12 @@ export function createCarousel(root) {
   function render() {
     body.replaceChildren();
     closeBtn.hidden = !selected;
-    if (!selected) { body.append(el('div', 'aos-d-idle', 'Knoten waehlen fuer Details')); return; }
+    if (!selected) { body.append(el('div', 'aos-d-idle', 'Knoten oder Session wählen — zeigt Typ, Aufgabe, Modell, Tokens')); return; }
     const e = selected;
     const col = nodeColor(e.type, e.meta);
     const heat = Math.max(0, Math.min(1, Number(e.heat) || 0));
     const nm = el('div', 'aos-d-name'); const sw = el('i'); sw.style.background = col;
-    nm.append(sw, el('span', null, e.label || e.id));
+    nm.append(sw, el('span', null, humanLabel(e)));   // gleiche Beschriftung wie Liste + 3D
     const grid = el('div', 'aos-d-grid');
     for (const [k, v] of detailRows(e, tokensBySession)) grid.append(el('div', 'k', k), el('div', 'v', v));
     const hb = el('div', 'aos-d-heat'); const hi = el('i');

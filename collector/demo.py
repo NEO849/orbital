@@ -46,12 +46,13 @@ MODEL_RATE = {"heavy": 3600, "mid": 2300, "light": 950}
 # bediente Pipelines, gespawnte Agenten (Typ professor via "prof:"-Praefix).
 # ----------------------------------------------------------------------------
 SESSIONS = [
-    ("alpha",   "data-ingest",   "heavy", "data",     ["ingest-queue"], ["crawler", "parser", "dedup-checker"]),
-    ("bravo",   "media-encode",  "mid",   "media",    ["render-farm"],  ["encoder", "thumb-maker"]),
-    ("charlie", "doc-review",    "mid",   "docs",     [],               ["reviewer"]),
-    ("delta",   "release-run",   "mid",   "ops",      ["watchdog"],     ["packager"]),
-    ("echo",    "research-run",  "heavy", "research", ["feed-sync"],    ["searcher", "prof:analyst"]),
-    ("foxtrot", "index-refresh", "light", "ops",      [],               ["indexer"]),
+    # Label = tmux-artiger Session-Name (kurz); meta.tmux wird davon abgeleitet.
+    ("alpha",   "data-refinery", "heavy", "data",     ["ingest-queue"], ["crawler", "parser", "dedup-checker"]),
+    ("bravo",   "media-forge",   "mid",   "media",    ["render-farm"],  ["encoder", "thumb-maker"]),
+    ("charlie", "docs-desk",     "mid",   "docs",     [],               ["reviewer"]),
+    ("delta",   "build-studio",  "mid",   "ops",      ["watchdog"],     ["packager"]),
+    ("echo",    "research-lab",  "heavy", "research", ["feed-sync"],    ["searcher", "prof:analyst"]),
+    ("foxtrot", "net-monitor",   "light", "ops",      [],               ["indexer"]),
 ]
 
 # Pipelines (systemd-artig): key, Label, Layer, speist welchen Server-Port.
@@ -232,7 +233,7 @@ def build_demo_state(t):
         sess_id = f"session:{sid8}"
         w.ent(sess_id, "session", slabel, active=sess_busy,
               meta={"project": f"~/work/{skey}", "status": "busy" if sess_busy else "idle",
-                    "model": model, "models": [model], "pane": None,
+                    "model": model, "models": [model], "pane": None, "tmux": slabel,
                     "updatedAt": int(time.time() * 1000)})
 
         # bediente Pipelines (Kontroll-Kante, statisch) + gelegentliche Jobs

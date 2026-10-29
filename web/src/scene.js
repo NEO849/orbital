@@ -14,6 +14,10 @@
 // reduced-motion / Automation → kein Auto-Orbit.
 
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { BASE, hex0x } from '../palette.js';
 import { log } from './log.js';
 
@@ -66,8 +70,10 @@ export function createScene(container) {
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
   renderer.setSize(W, H);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.95;   // leicht runter → der weißglühende Strom-Spine blüht nicht aus
+  // Tone-Mapping macht jetzt der OutputPass am ENDE der Composer-Kette (sonst doppelt getont).
+  // RenderPass → Bloom laufen linear; OutputPass tont (ACES) + sRGB. Exposure bleibt erhalten.
+  renderer.toneMapping = THREE.NoToneMapping;
+  renderer.toneMappingExposure = 0.90;   // leicht zurückgenommen (nicht tiefer → matte Knoten/Labels bleiben lesbar)
   Object.assign(renderer.domElement.style, { display: 'block', width: '100%', height: '100%' });
   container.appendChild(renderer.domElement);
 
@@ -79,6 +85,22 @@ export function createScene(container) {
   scene.fog = new THREE.Fog(hex0x(BASE.bg), 18, 56);
 
   const camera = new THREE.PerspectiveCamera(46, W / H, 0.1, 200);
+
+  // ── W6: Bloom-Kette (EffectComposer) — die hellsten Pixel (Ströme, Ring-Nodes, heiße
+  // Kerne, Licht-Pulse) glühen. Voll-Szene mit hoher Luminanz-Schwelle = effektiv selektiv:
+  // nur was schon hell IST blüht; dunkle Panels/Knoten bleiben matt. Zurückhaltend dosiert.
+  // RenderPass (linear) → UnrealBloomPass → OutputPass (Tone-Mapping + sRGB am Ende).
+  const composer = new EffectComposer(renderer);
+  composer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  composer.addPass(new RenderPass(scene, camera));
+  const bloomPass = new UnrealBloomPass(
+    new THREE.Vector2(W, H),
+    0.34,   // strength — sanfte Aura statt Flare/Wash (Design-Spezialist)
+    0.40,   // radius — enger Halo, bleibt an der Quelle statt die Scheibe zu vernebeln
+    0.78,   // threshold — nur wirklich heiße Spitzen blühen; alles andere bleibt ruhig lesbar
+  );
+  composer.addPass(bloomPass);
+  composer.addPass(new OutputPass());
 
   // Lichter: Hemisphere (Grundhelligkeit) + Key (Metall-Sheen) + 2 Rim-Punkte.
   scene.add(new THREE.HemisphereLight(0xaebecd, 0x0a0c10, 0.95));
@@ -113,10 +135,31 @@ export function createScene(container) {
   }
   applyOrbit();
 
+  // ── W7: Kinematischer Fokus — gedämpfter Kamera-Anflug auf einen Knoten (kein Spring-Lib).
+  // focusOn(pos,radius) setzt ein Ziel; der tick lerpt target + radius frameraten-stabil dorthin.
+  const focus = { active: false, goalTarget: new THREE.Vector3(), goalRadius: 26 };
+  const DEFAULT_RADIUS = 26;
+  function focusOn(pos, radius) {
+    if (pos) { focus.goalTarget.set(pos.x, pos.y, pos.z); focus.goalRadius = radius || 15; }
+    else { focus.goalTarget.set(0, 0, 0); focus.goalRadius = DEFAULT_RADIUS; }
+    focus.active = true;
+    orbit.pausedUntil = performance.now() + 4500;   // Auto-Drift ruht während des Anflugs
+  }
+  function stepFocus(dt) {
+    if (!focus.active) return false;
+    const a = 1 - Math.pow(1 - 0.11, dt * 60);   // gedämpftes, frameraten-stabiles Lerp
+    target.lerp(focus.goalTarget, a);
+    orbit.radius += (focus.goalRadius - orbit.radius) * a;
+    if (target.distanceTo(focus.goalTarget) < 0.02 && Math.abs(orbit.radius - focus.goalRadius) < 0.05) {
+      target.copy(focus.goalTarget); orbit.radius = focus.goalRadius; focus.active = false;
+    }
+    return true;
+  }
+
   // Drag-Rotation. pointer events decken Maus + Touch ab.
   let dragging = false, lastX = 0, lastY = 0;
   const DRAG_K = 0.005;   // rad pro px
-  function onDown(e) { dragging = true; lastX = e.clientX; lastY = e.clientY; orbit.pausedUntil = performance.now() + 3000; }
+  function onDown(e) { dragging = true; lastX = e.clientX; lastY = e.clientY; focus.active = false; orbit.pausedUntil = performance.now() + 3000; }
   function onMove(e) {
     if (!dragging) return;
     const dx = e.clientX - lastX, dy = e.clientY - lastY;
@@ -134,6 +177,7 @@ export function createScene(container) {
     // multiplikativer Zoom → gefühlt gleichmäßig über den ganzen Bereich.
     const f = Math.exp(e.deltaY * 0.0012);
     orbit.radius = Math.max(orbit.minR, Math.min(orbit.maxR, orbit.radius * f));
+    focus.active = false;
     orbit.pausedUntil = performance.now() + 3000;
     applyOrbit();
   }
@@ -148,6 +192,8 @@ export function createScene(container) {
   function resize() {
     [W, H] = sizeOf();
     renderer.setSize(W, H);
+    composer.setSize(W, H);
+    bloomPass.setSize(W, H);
     camera.aspect = W / H; camera.updateProjectionMatrix();
   }
   const ro = new ResizeObserver(resize); ro.observe(container);
@@ -164,18 +210,19 @@ export function createScene(container) {
   function tick(dt) {
     if (!visible || document.hidden) return false;
     const now = performance.now();
-    if (AUTO && !dragging && now >= orbit.pausedUntil) {
+    const focusing = stepFocus(dt);         // W7: Kamera-Anflug (hat Vorrang vor Auto-Drift)
+    if (AUTO && !dragging && !focusing && now >= orbit.pausedUntil) {
       orbit.yaw += orbit.autoSpeed * dt;    // sanfte Leerlauf-Drift
-      applyOrbit();
     }
-    renderer.render(scene, camera);
+    if (focusing || (AUTO && !dragging && now >= orbit.pausedUntil)) applyOrbit();
+    composer.render();   // Bloom-Kette statt direktem renderer.render
     return true;
   }
 
   l.info('Szene bereit', `${W}x${H}`, AUTO ? 'auto-orbit' : 'still');
 
   return {
-    THREE, scene, camera, renderer, target, orbit, tick,
+    THREE, scene, camera, renderer, target, orbit, tick, focusOn,
     get visible() { return visible; },
     destroy() {
       ro.disconnect(); io.disconnect();

@@ -12,10 +12,13 @@
 import * as THREE from 'three';
 import { createScene } from './scene.js';
 import { createNodes } from './nodes.js';
+import { createCore } from './core.js';
 import { createFlows } from './flows.js';
 import { createStreamLines } from './streamlines.js';
+import { createTubes } from './tubes.js';
 import { createZones } from './zones.js';
 import { createHud } from './hud.js';
+import { createRates } from './rates.js';
 import { createCarousel } from './carousel.js';
 import { StateClient } from './data.js';
 import { computeLayout, zones as zoneDefs } from './layout.js';
@@ -25,20 +28,27 @@ const l = log.mod('main');
 
 function boot() {
   const sceneHost = document.getElementById('scene');
+  // Live-Raten je Entität (Token/min, Byte/min) aus dem Event-Strom — vom HUD gelesen.
+  const rates = createRates();
   const hud = createHud({
     top: document.getElementById('hud-top'),
     left: document.getElementById('hud-left'),
     right: document.getElementById('hud-right'),
     bottom: document.getElementById('hud-bottom'),
+    rates,
   });
   const carousel = createCarousel(document.getElementById('spotlight'));
 
   const sc = createScene(sceneHost);
-  let nodes = null, flows = null, streams = null, zonesViz = null;
+  let nodes = null, flows = null, streams = null, tubes = null, zonesViz = null, core = null;
   if (sc) {
+    try { core = createCore(sc.scene); } catch (e) { l.warn('Erdkern übersprungen:', e.message); }
     nodes = createNodes(sc.scene);
     flows = createFlows(sc.scene, (id) => (nodes ? nodes.getPosition(id) : null));
     streams = createStreamLines(sc.scene);   // kontinuierliche Adern UNTER den Partikeln
+    // R4: Glas-Schlauch (tubes.js) AUSGEHÄNGT (User-Entscheid „Schlauch entfernen" + wusch die
+    // Szene aus). Alle `if (tubes)`-Guards unten werden dadurch zu No-ops. Datei bleibt bis Abnahme.
+    // tubes = createTubes(sc.scene, (id) => (nodes ? nodes.getPosition(id) : null));
     zonesViz = createZones(sc.scene);
   } else {
     // Kein WebGL → HUD/Spotlight funktionieren trotzdem (graceful degrade).
@@ -67,9 +77,15 @@ function boot() {
             byteHeat.set(e.id, e.byteHeat || (e.meta && e.meta.byteHeat) || 0);
           }
           flows.setActive(state.edges || [], (id) => heat.get(id) || 0, (id) => byteHeat.get(id) || 0);
+          // Systemlast → Erdkern-Helligkeit (Salience=Signal): heißeste Aktivität treibt den Kern.
+          if (core) { let mx = 0; for (const v of heat.values()) if (v > mx) mx = v; for (const v of byteHeat.values()) if (v > mx) mx = v; core.setLoad(mx); }
           if (streams) {
             streams.rebuild(state.edges || [], (id) => (nodes ? nodes.getPosition(id) : null));
             streams.setActive(state.edges || [], (id) => heat.get(id) || 0, (id) => byteHeat.get(id) || 0);
+          }
+          if (tubes) {
+            tubes.rebuild(state.edges || [], (id) => (nodes ? nodes.getPosition(id) : null));
+            tubes.setActive(state.edges || [], (id) => heat.get(id) || 0, (id) => byteHeat.get(id) || 0);
           }
         }
         if (zonesViz) {
@@ -91,7 +107,7 @@ function boot() {
     },
     onEvents: (events) => {
       try {
-        for (const ev of events) { if (flows) flows.spawn(ev); }
+        for (const ev of events) { if (flows) flows.spawn(ev); rates.add(ev); if (tubes) tubes.add(ev); }
         hud.pushEvents(events);
         totalEvents += events.length;
         debugOverlay.setEvents(totalEvents);
@@ -126,6 +142,28 @@ function boot() {
     });
   }
 
+  // ── Auswahl → 3D-Highlight (W3a) ──────────────────────────────────────────
+  // JEDE Auswahl (Session-Zeile links ODER Klick auf einen Knoten) läuft über denselben
+  // Choke-Point emitDetail → aos:detail. Hier lassen wir den passenden Knoten im 3D
+  // aufleuchten → Liste↔3D bidirektional verknüpft, EIN Pfad, keine Doppel-Logik.
+  if (nodes && typeof nodes.setSelected === 'function') {
+    document.addEventListener('aos:detail', (ev) => {
+      const id = ev.detail && ev.detail.entity ? ev.detail.entity.id : null;
+      try { nodes.setSelected(id); } catch (e) { l.warn('setSelected:', e.message); }
+      // W7: Kamera gleitet zum gewählten Knoten (kinematischer Fokus); ohne Auswahl zurück zur Mitte.
+      try {
+        if (sc && typeof sc.focusOn === 'function') {
+          const p = id ? nodes.getPosition(id) : null;
+          sc.focusOn(p || null, 13);
+        }
+      } catch (e) { l.warn('focusOn:', e.message); }
+    });
+    document.addEventListener('aos:detail-cleared', () => {
+      try { nodes.setSelected(null); } catch (e) { l.warn('setSelected-clear:', e.message); }
+      try { if (sc && typeof sc.focusOn === 'function') sc.focusOn(null); } catch (e) { l.warn('focusOn-clear:', e.message); }
+    });
+  }
+
   // ── EINE Render-/Update-Schleife ──────────────────────────────────────────
   let last = performance.now();
   let fpsAcc = 0, fpsN = 0;
@@ -141,7 +179,13 @@ function boot() {
           if (nodes) nodes.tick(dt, camDist);
           if (flows) flows.tick(dt);
           if (streams) streams.tick(dt);
+          if (tubes) tubes.tick(dt);
           if (zonesViz) zonesViz.tick(camDist);
+          if (core) core.tick(dt);
+          // R3.0: Signal für die Headless-Screenshot-Harness — erst NACH dem ersten wirklich
+          // gerenderten Frame true. Playwright wartet darauf statt auf eine feste Zeit → kein
+          // schwarzer Screenshot mehr (ersetzt die verdeckter-Mac-Tab-Falle durch Serverseite).
+          if (!window.__frameReady) window.__frameReady = true;
         }
       }
       carousel.tick(dt);

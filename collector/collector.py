@@ -19,6 +19,7 @@ import glob
 import json
 import time
 import socket
+import subprocess
 import logging
 import datetime
 from collections import deque, OrderedDict
@@ -50,6 +51,12 @@ SESSION_ACTIVE_MS = 90_000   # Session gilt als aktiv, wenn vor < 90s aktualisie
 TMUX_TAIL_LINES = 40     # je aktiver Session die letzten N Aktivitaets-Zeilen
 MEM_TAIL_LINES = 60      # letzte N Memory-Zugriffe als juengste Events
 DEDUP_WINDOW = 4000      # Event-Signaturen die der Daemon gegen Doppel-Schreiben haelt
+# events.jsonl ist ein Ring: bei Ueberschreiten von _MAX wird auf den juengsten _KEEP
+# gekuerzt. Verhindert unbegrenztes Wachstum -> ohne Cap frisst ein Tick O(Dateigroesse)
+# CPU (89-MB-Datei pegelte einen Kern auf 100% -> Watchdog-SIGKILL). read_events resynct
+# Clients bei Schrumpfung (since_offset > size -> ans Ende). ~100-200 B/Event: 2 MB ~ 12k Events.
+EVENTS_MAX_BYTES = 2_000_000   # ueber dieser Groesse wird gekuerzt
+EVENTS_KEEP_BYTES = 1_000_000  # so viel juengster Schwanz bleibt stehen
 
 # ----------------------------------------------------------------------------
 # Logging: rotierendes Logfile + Komponenten-Tag
@@ -84,6 +91,33 @@ def _setup_logging():
 _PANE_RE = re.compile(r"%(\d+)")                       # tmux "...:@<win>.%<pane>"
 _ACT_RE = re.compile(r"^(\d{2}):(\d{2})\|([^|]*)\|(.*)$")  # HH:MM|TOOL|LABEL
 _MEM_MD_RE = re.compile(r"([A-Za-z0-9_.-]+\.md)")      # Memory-Dateiname im Label
+
+
+_TMUX_CACHE = {}          # pane -> (ts, name)
+_TMUX_TTL = 30.0
+
+
+def tmux_session_name(pane):
+    """tmux-Session-Name einer Pane ('%N') via `tmux display-message -p -t %N '#S'`.
+    FAIL-OPEN: kein tmux / Pane weg / Timeout -> None (Aufrufer nimmt den Fallback).
+    Ergebnis 30 s gecacht, damit nicht pro Tick ein Prozess pro Session startet.
+    Live bisher NICHT gegen echtes tmux getestet (nur defensiv gebaut)."""
+    if not pane:
+        return None
+    now = time.time()
+    hit = _TMUX_CACHE.get(pane)
+    if hit and now - hit[0] < _TMUX_TTL:
+        return hit[1]
+    name = None
+    try:
+        out = subprocess.run(["tmux", "display-message", "-p", "-t", f"%{pane}", "#S"],
+                             capture_output=True, text=True, timeout=2)
+        if out.returncode == 0:
+            name = (out.stdout or "").strip()[:48] or None
+    except Exception:
+        name = None
+    _TMUX_CACHE[pane] = (now, name)
+    return name
 
 
 def _now_iso():
@@ -395,9 +429,14 @@ def build_state():
                     b.edge(f"session:{sid8}", ev["target"], "access", static=False)
                     b.event(ev)
             models = tx["models"] if tx else []
+            # Label = tmux-Session-Name; Fallback Basename(cwd), dann Session-Name/sid8.
+            tmux_name = tmux_session_name(pane)
+            cwd = d.get("cwd") or ""
+            label = tmux_name or os.path.basename(cwd.rstrip("/")) or d.get("name") or sid8
             b.entity(
-                f"session:{sid8}", "session", d.get("name") or sid8, active=active,
+                f"session:{sid8}", "session", label, active=active,
                 meta={
+                    "tmux": label,
                     "project": d.get("cwd"),
                     "status": status,
                     "model": models[0] if models else None,   # Primaer-Modell (Back-Compat)
@@ -700,7 +739,29 @@ def _append_events(events, written_sigs):
     with open(EVENTS_FILE, "a", encoding="utf-8") as f:
         for ev in fresh:
             f.write(json.dumps(ev) + "\n")
+    _cap_events_file()
     return len(fresh)
+
+
+def _cap_events_file():
+    """events.jsonl als Ring begrenzen: > EVENTS_MAX_BYTES -> auf den juengsten
+    EVENTS_KEEP_BYTES kuerzen (an Zeilengrenze, atomar). Fail-open: nie den Writer
+    brechen. Selten (nur beim Ueberschreiten) -> amortisiert vernachlaessigbare Kosten."""
+    try:
+        if os.path.getsize(EVENTS_FILE) <= EVENTS_MAX_BYTES:
+            return
+        with open(EVENTS_FILE, "rb") as f:
+            f.seek(-EVENTS_KEEP_BYTES, os.SEEK_END)
+            tail = f.read()
+        nl = tail.find(b"\n")               # erste vollstaendige Zeile ab Schnitt
+        if nl >= 0:
+            tail = tail[nl + 1:]
+        tmp = EVENTS_FILE + ".tmp"
+        with open(tmp, "wb") as f:
+            f.write(tail)
+        os.replace(tmp, EVENTS_FILE)
+    except OSError:
+        pass
 
 
 def _write_state_atomic(state):
